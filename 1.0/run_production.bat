@@ -15,7 +15,7 @@ set FLASK_ENV=production
 
 echo Starting production server on 0.0.0.0:5710...
 REM cd /d "e:\PythonServer\PythonServer2\1.0"
-start "GUI Monitor" %PYTHON% gui.py
+start "GUI Monitor" cmd /c "%PYTHON% gui.py"
 %PYTHON% wsgi.py
 echo Press any key to restart the server...
 pause >nul

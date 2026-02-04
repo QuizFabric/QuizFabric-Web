@@ -7,7 +7,7 @@ set PYTHON=%VENV_PATH%\Scripts\python.exe
 
 %PYTHON% -m pip install -r requirements.txt
 
-start "GUI Monitor" %PYTHON% gui.py
+start "GUI Monitor" cmd /c "%PYTHON% gui.py"
 %PYTHON% app.py
 echo There has been an error. Restarting now...
 goto start

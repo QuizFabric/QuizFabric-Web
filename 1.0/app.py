@@ -157,6 +157,12 @@ def log_connection():
 def track_page():
     if active_clients is None:
         return
+    # Exclude static assets, favicon, robots, and uploaded images
+    if (request.path.startswith('/static/') or 
+        request.path in ['/favicon.ico', '/robots.txt'] or 
+        request.path.startswith('/data/') or 
+        request.path.startswith('/UploadedImages/')):
+        return
     ip = get_client_ip()
     active_clients[ip] = {
         'page': request.path,
@@ -1586,6 +1592,7 @@ def process_actions():
     while True:
         try:
             action = actions_queue.get(timeout=1)
+            logger.info(f"Processing GUI action: {action}")
             if action['action'] == 'ban':
                 ip = action['ip']
                 banned_ips[ip] = 'Banned from GUI'
@@ -1593,11 +1600,18 @@ def process_actions():
                 sid = active_clients.get(ip, {}).get('sid')
                 if sid:
                     socketio.disconnect(sid)
+                    logger.info(f"Banned IP {ip} from GUI")
+                else:
+                    logger.warning(f"No SID found for IP {ip} to ban")
             elif action['action'] == 'send_popup':
                 ip = action['ip']
+                message = action['message']
                 sid = active_clients.get(ip, {}).get('sid')
                 if sid:
-                    socketio.emit('show_popup', {'message': action['message']}, to=sid)
+                    socketio.emit('show_popup', {'message': message}, to=sid)
+                    logger.info(f"Sent popup to IP {ip}: {message}")
+                else:
+                    logger.warning(f"No SID found for IP {ip} to send popup")
             # clean old
             now = time.time()
             for ip in list(active_clients.keys()):

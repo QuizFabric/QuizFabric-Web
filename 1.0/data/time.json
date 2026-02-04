@@ -45,7 +45,21 @@
     "AIS": {},
     "Best Quiz": {}
   },
-  "192.168.50.1": {},
+  "192.168.50.1": {
+    "French Quiz": {
+      "Ok last question press true for free points": "0.99",
+      "Fill in the gap: _____ a gauche (Latin characters only)": "4.12",
+      "Which one means \"Turn right\"": "2.07",
+      "Which one is \"I study math\" in french": "2.17",
+      "True or false: la mathamatique means geography": "3.92"
+    },
+    "hello": {
+      "radnor": "4.30"
+    },
+    "Test Quiz": {
+      "hayy": "1.70"
+    }
+  },
   "192.168.50.80": {
     "French Quiz 2": {}
   },
