@@ -20,8 +20,8 @@ if __name__ == "__main__":
     app_module.active_clients = {}
     app_module.ip_to_sid = {}
     app_module.actions_queue = queue.Queue()
-    logger.info("Starting QuizFabric production server on port 5710...")
-    socketio.run(app, debug=False, host="0.0.0.0", port=5710)
+    logger.info("Starting QuizFabric production server on port 80...")
+    socketio.run(app, debug=False, host="0.0.0.0", port=80)
 else:
     # For gunicorn WSGI deployment
     logger.info("QuizFabric WSGI application loaded for gunicorn deployment")

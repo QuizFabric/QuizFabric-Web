@@ -4,3 +4,4 @@ gevent
 gunicorn[gevent]
 python-dotenv
 colorama
+requests

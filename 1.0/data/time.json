@@ -7,10 +7,14 @@
     "Blank 4": {
       "Fill in the blank: _____ a gauche": "2.51"
     },
-    "hello": {},
-    "30_01_2026 french quiz": {},
+    "hello": {
+      "radnor": "3.52"
+    },
+    "30_01_2026 french quiz": {
+      "What is “Turn Right” in french": "1.13"
+    },
     "French Quiz": {
-      "Ok last question press true for free points": "1.21"
+      "Ok last question press true for free points": "0.95"
     }
   },
   "104.28.248.79": {
@@ -95,6 +99,19 @@
       "What emotion does Pusheen typically convey?": "0.78",
       "How often does Pusheen post on social media?": "1.15",
       "What is Pusheen's most iconic catchphrase or expression?": "1.86"
+    }
+  },
+  "217.146.93.96": {
+    "Gettery quiz": {
+      "Does daddy like spagetti": "2.36"
+    }
+  },
+  "192.168.50.93": {
+    "30_01_2026 french quiz": {
+      "Fill in the blank: _____ a gauche": "26.25"
+    },
+    "quiz for lucas": {
+      "Which Minecraft file type is used to define custom item models?": "3.92"
     }
   }
 }
