@@ -1,2 +1,5 @@
 .vercel
 .env*.local
+
+# Let's Encrypt HTTP-01 challenge tokens (act as keys during validation)
+certbot_webroot/
