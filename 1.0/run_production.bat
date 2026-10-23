@@ -2,7 +2,8 @@
 :start
 REM Production server startup script
 REM For Windows: Uses Flask-SocketIO production-ready server
-REM Note: For Linux/Unix, use: gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker -b 0.0.0.0:5710 -w 4 wsgi:app
+REM Note: For Linux/Unix, use: gunicorn -w 1 --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker -b 0.0.0.0:80 wsgi:app
+REM (-w 1 on purpose: live games live in process memory, so more workers would split them)
 
 setlocal enabledelayedexpansion
 
@@ -13,9 +14,9 @@ set FLASK_ENV=production
 
 %PYTHON% -m pip install -r requirements.txt
 
-echo Starting production server on 0.0.0.0:5710...
-REM cd /d "e:\PythonServer\PythonServer2\1.0"
-start "GUI Monitor" cmd /c "%PYTHON% gui.py"
+echo Starting production server (HTTPS on 0.0.0.0:443, HTTP redirect on 0.0.0.0:80)...
+set QUIZFABRIC_SERVER=https://localhost:5710
+
 %PYTHON% wsgi.py
 echo Press any key to restart the server...
 pause >nul

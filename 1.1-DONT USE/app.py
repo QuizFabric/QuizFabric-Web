@@ -911,7 +911,7 @@ def handle_reveal_answers(data):
 
 if __name__ == '__main__':
     print(datetime.datetime.now(), "Server is not running. Starting Server...")
-    socketio.run(app, debug=True, host="0.0.0.0", port=5710)
+    socketio.run(app, debug=True, host="0.0.0.0", port=5711)
     print(datetime.datetime.now(), "Server Error. Stopping Server...")
     # Optional: Add any cleanup code here if needed.
     print(datetime.datetime.now(), "Server stopped.")

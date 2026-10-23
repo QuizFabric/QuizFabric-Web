@@ -27,9 +27,10 @@
             margin: 20px;
         }
         .example-format {
-            background-color: #f4f4f4;
-            padding: 5px;
-            border: 1px solid #ddd;
+            background: rgba(255, 255, 255, 0.18);
+            padding: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 10px;
             margin-bottom: 20px;
         }
         .action-buttons {
@@ -132,7 +133,11 @@
             <!-- Add additional example lines as needed -->
         </div>
         <form method="POST" action="{{ url_for('addquiz') }}" enctype="multipart/form-data">
-            <input type="file" name="quiz_file" accept=".txt, text/plain" required>
+            <input type="file" name="quiz_file" id="quiz-file-input" accept=".txt, text/plain" required onchange="setQuizName()">
+            <div style="margin-top: 10px;">
+                <p style="color: #666; margin: 4px 0;">Quiz banner (optional - shown in the quiz lists):</p>
+                <input type="file" name="banner" id="banner-input" accept=".png,.webp,.jpg,.jpeg,.gif">
+            </div>
             <button type="submit" class="upload-quiz-button">Upload Quiz</button>
         </form>
             <div class="image-upload-section">
@@ -140,6 +145,10 @@
                 <p style="color: #666; margin: 10px 0;">Supported formats: PNG, WebP, JPG, JPEG | Max file size: 300MB | Max 20 images per quiz</p>
                 <input type="file" id="image-input" accept=".png,.webp,.jpg,.jpeg" multiple>
                 <button type="button" onclick="uploadImage()" class="upload-quiz-button" style="margin-top: 10px;">Upload Images</button>
+                <div style="margin-top: 10px;">
+                    <input type="url" id="image-url-input" placeholder="Or paste an image URL (https://...)" style="width: 70%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                    <button type="button" onclick="uploadImageFromUrl()" class="upload-quiz-button">Add From URL</button>
+                </div>
                 <div id="upload-status" class="upload-status"></div>
                 <div id="image-preview" class="image-preview"></div>
             </div>
@@ -199,7 +208,43 @@
             
                 fileInput.value = '';
             }
-        
+
+            async function uploadImageFromUrl() {
+                const urlInput = document.getElementById('image-url-input');
+                const imageUrl = urlInput.value.trim();
+
+                if (!imageUrl) {
+                    showStatus('Please enter an image URL', 'error');
+                    return;
+                }
+
+                if (!currentQuizName) {
+                    showStatus('Please upload a quiz file first to set the quiz name', 'error');
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/upload_quiz_image_url/${encodeURIComponent(currentQuizName)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image_url: imageUrl })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        showStatus(`✓ Added from URL: ${data.filename}`, 'success');
+                        addImagePreview(data.url, data.filename);
+                    } else {
+                        showStatus(`✗ Error: ${data.error}`, 'error');
+                    }
+                } catch (error) {
+                    showStatus(`✗ Error: ${error.message}`, 'error');
+                }
+
+                urlInput.value = '';
+            }
+
             function addImagePreview(url, filename) {
                 const preview = document.getElementById('image-preview');
                 const div = document.createElement('div');

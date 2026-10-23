@@ -1,0 +1,44 @@
+What is C++?  
+better c
+
+Who invented C++?  
+Bjarne Stroustrup
+
+What is the file extension for a C++ source file?  
+.cpp
+
+Which keyword is used to declare a constant variable in C++?  
+const
+
+What operator is used to access a member of an object through a pointer?  
+->
+
+Which standard library container is commonly used as a dynamic array?  
+std::vector 
+
+What is function overloading in C++?  
+overload
+
+What is the default access level for members in a C++ struct?  
+public
+
+What is the default access level for members in a C++ class?  
+private
+
+What is the purpose of a destructor in C++?  
+To release resources when an object is destroyed
+
+Which output stream is used for console output in C++?  
+std::cout
+
+What does RAII stand for?  
+Resource Acquisition Is Initialization
+
+What is a template in C++?  
+A feature that enables generic programming by allowing functions and classes to operate with different data types.
+
+What is the scope resolution operator in C++?  
+::
+
+What mechanism does C++ use for handling exceptions?  
+The try, catch, and throw statements

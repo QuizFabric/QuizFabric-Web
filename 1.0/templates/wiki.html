@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>QuizFabric - How to Use</title>
+  <link rel="icon" href="/data/icon.png" type="image/png">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    .wiki-section { margin-bottom: 1.6rem; }
+    .wiki-section h2 { color: #ffd05c; margin-bottom: 0.5rem; }
+    .wiki-section h3 { color: #fff; margin: 0.8rem 0 0.3rem 0; }
+    .wiki-section p, .wiki-section li { color: var(--text-secondary); line-height: 1.5; }
+    .wiki-key { display: inline-block; background: var(--glass); border: 1px solid rgba(255,255,255,0.25);
+                border-radius: 6px; padding: 1px 8px; margin: 0 2px; color: #ffd05c; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>📖 QuizFabric - How to Use</h1>
+      <p>A Kahoot-style quiz system: the server hosts quizzes, and you join from a Nintendo 3DS or DS
+      (or the website). This page is the quick guide for the handheld clients.</p>
+      <p><a href="{{ url_for('home') }}" class="btn btn-secondary">← Back to the quiz list</a></p>
+    </div>
+
+    <div class="card wiki-section">
+      <h2>🎮 3DS Version</h2>
+      <p>Install the <b>QuizFabric3DS.cia</b> (or run the .3dsx) and open it from the home menu.</p>
+
+      <h3>Setup screen</h3>
+      <p>The top screen shows the server address and build number. Touch the <b>SERVER</b> bar to
+      change the IP and port (the production build has the server fixed - no bar).</p>
+
+      <h3>Joining a game</h3>
+      <ul>
+        <li>Touch <b>JOIN</b>, then tap the rows to set your <b>NAME</b>, the 4-digit <b>GAME PIN</b>
+            and your <b>AVATAR</b>, then press JOIN GAME.</li>
+        <li>The question appears on the top screen; tap your answer on the touch screen. Slider and
+            puzzle questions are supported too.</li>
+        <li>Press <span class="wiki-key">B</span> to leave a game.</li>
+      </ul>
+
+      <h3>Hosting from the 3DS</h3>
+      <ul>
+        <li>Touch <b>HOST</b> and pick a quiz. The top screen shows the <b>GAME PIN</b> (players join
+            with it) and a <b>CONTROL CODE</b>.</li>
+        <li>Touch <b>OPEN CONTROL PANEL</b> (or use CONTROL on the main menu with the control code)
+            to start the next question, reveal answers, toggle autoplay and kick players.</li>
+      </ul>
+
+      <h3>Solo play</h3>
+      <p>Touch <b>SOLO</b> and pick a quiz to play it alone with scoring, no game code needed.</p>
+
+      <h3>KAHOOT (download quizzes)</h3>
+      <ul>
+        <li>Touch <b>KAHOOT</b> and type a <b>search query</b> (or paste a Kahoot ID/link).</li>
+        <li>Pick a result (covers show on the top screen) - the quiz, its questions, images and GIFs
+            are downloaded and it becomes yours to edit and host.</li>
+        <li>Rename it, then <b>SAVE</b> (<span class="wiki-key">B</span> discards it).</li>
+        <li>The server limits downloads to 1 every 10 minutes / 10 per day per device (production).</li>
+      </ul>
+
+      <h3>Pre-caching &amp; offline mode</h3>
+      <ul>
+        <li>In the solo/host quiz list: <span class="wiki-key">X</span> pre-caches a quiz's photos and
+            GIFs to the SD card. <span class="wiki-key">X+SELECT</span> caches every quiz.</li>
+        <li><span class="wiki-key">Y</span> searches the quiz list.</li>
+        <li><span class="wiki-key">Y</span> on the setup screen switches to <b>OFFLINE MODE</b> - only
+            SOLO (cached quizzes) and DELETE (remove cached quizzes) are shown. Cached quizzes play
+            fully offline; images load from the SD card ("Loading from cache").</li>
+        <li>Offline, <span class="wiki-key">Y</span> checks the internet again to go back online.</li>
+      </ul>
+    </div>
+
+    <div class="card wiki-section">
+      <h2>🎮 DS / DSi Version</h2>
+      <p>Run <b>QuizFabricDS.nds</b> from your flashcard / nds-bootstrap. Everything works with the
+      touch screen; the top screen shows questions and the bottom screen the buttons.</p>
+
+      <h3>Differences from the 3DS version</h3>
+      <ul>
+        <li><b>Wi-Fi</b>: DS homebrew only supports <b>open or WEP</b> networks. On WPA2 you must make
+            a hotspot. (Wi-Fi setup screen comes with the full release.)</li>
+        <li><b>No GIFs</b>: the DS is not powerful enough to load GIFs - a GIF question shows
+            "Cannot load GIF. DS is not powerful enough to load GIFs. Use a 3DS instead."</li>
+        <li><b>Pictures are very low resolution</b> to save RAM - that is expected.</li>
+        <li>The background is a static picture (no animation) to save power.</li>
+        <li>Typing uses the touch-screen keyboard (tap a field to open it).</li>
+      </ul>
+
+      <h3>Everything else works like the 3DS</h3>
+      <p>Join with a game PIN, host with the control code, solo play, KAHOOT downloads, pre-caching
+      with <span class="wiki-key">X</span> / <span class="wiki-key">X+SELECT</span> and offline mode.</p>
+    </div>
+
+    <div class="card wiki-section">
+      <h2>🌐 Website</h2>
+      <p>On the website you can also upload or make quizzes, edit them, host games in the browser and
+      steal quizzes from Kahoot or Blooket.</p>
+      <p><a href="{{ url_for('home') }}" class="btn btn-primary">Browse quizzes</a>
+         <a href="{{ url_for('addquiz') }}" class="btn btn-secondary">Upload a quiz</a></p>
+    </div>
+  </div>
+</body>
+</html>

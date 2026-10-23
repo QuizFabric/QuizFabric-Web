@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>QuizFabric - Steal from Kahoot</title>
+    <link rel="icon" href="/data/icon.png" type="image/png">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="apple-touch-icon" href="/data/icon.png">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="description" content="A modern quiz application for creating and taking quizzes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="QuizFabric">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .app-icon {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            height: 40px;
+            width: 40px;
+            z-index: 1000;
+            opacity: 0.9;
+        }
+        .steal-container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: rgba(255, 255, 255, 0.18);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 25px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            box-shadow: 0 10px 30px rgba(40, 8, 60, 0.35);
+        }
+        .steal-container h1 {
+            color: #fff;
+            text-align: center;
+            text-shadow: 0 2px 8px rgba(40, 8, 60, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .steal-container h1 img {
+            height: 32px;
+            width: 32px;
+        }
+        .steal-container p {
+            color: rgba(255, 255, 255, 0.85);
+        }
+        .steal-container input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+        }
+        .steal-status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .steal-status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .steal-status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+<img src="/data/icon.png" alt="QuizFabric" class="app-icon">
+    <div class="steal-container">
+        <h1><img src="https://kahoot.it/favicon.ico" alt="Kahoot"> Steal from Kahoot</h1>
+        {% if error %}
+        <div class="steal-status error">✗ {{ error }}</div>
+        {% endif %}
+        <p>Paste a link to a public Kahoot quiz (like <code>https://create.kahoot.it/details/.../a1b2c3d4-e5f6-...-abcdef123456</code>) or just the quiz ID at the end of the link. QuizFabric will download it and convert it.</p>
+        <p>Multiple-choice, type-answer, puzzle (ordering), and slider questions are kept — other question types are skipped because QuizFabric doesn't support them. Question images are downloaded too.</p>
+        <p>You can also just type a topic — QuizFabric searches Kahoot and steals the first public quiz it finds.</p>
+        <form method="POST" action="{{ url_for('stealquiz') }}">
+            <input type="text" name="quiz_id" placeholder="Kahoot quiz link or ID" value="{{ quiz_id or '' }}" required>
+            <button type="submit" class="btn btn-primary">🕵️ Steal Quiz</button>
+        </form>
+
+        <div style="text-align:center; margin: 10px 0; color: rgba(255,255,255,0.7);">— or —</div>
+
+        <form method="POST" action="{{ url_for('stealquiz') }}">
+            <input type="text" name="search" placeholder="Steal a quiz about... (e.g. capitals of the world)" required>
+            <button type="submit" class="btn btn-primary">🔍 Steal Quiz About...</button>
+        </form>
+
+        <a href="{{ url_for('home') }}" class="back-link">← Back to Home</a>
+    </div>
+</body>
+</html>

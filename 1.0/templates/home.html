@@ -46,6 +46,9 @@
         <a href="{{ url_for('addquiz') }}" class="btn btn-primary">📤 Upload Quiz</a>
         <a href="{{ url_for('makequiz') }}" class="btn btn-primary">✏️ Make Quiz</a>
         <a href="{{ url_for('join_game') }}" class="btn btn-primary">Join Game</a>
+        <a href="{{ url_for('wiki') }}" class="btn btn-secondary">📖 How to Use</a>
+        <a href="{{ url_for('stealquiz') }}" class="btn btn-primary"><img src="https://kahoot.it/favicon.ico" alt="Kahoot" style="height: 16px; margin-right: 8px;"> Steal from Kahoot</a>
+        <a href="{{ url_for('stealblooket') }}" class="btn btn-primary"><img src="https://tse3.mm.bing.net/th/id/OIP.nfyHloyVAQeZPlZGhVumCQHaEK?r=0&rs=1&pid=ImgDetMain&o=7&rm=3" alt="Blooket" style="height: 16px; margin-right: 8px;"> Steal from Blooket</a>
         
         <a href="https://github.com/lucgei231/PythonServer" class="btn btn-secondary" target="_blank"><img src="https://github.com/favicon.ico" alt="GitHub" style="height: 16px; margin-right: 8px;"> View on GitHub</a>
       </div>
@@ -58,6 +61,13 @@
       <ul class="quiz-list">
         {% for quiz in quizzes %}
         <li class="quiz-item">
+          <div class="quiz-banner">
+            {% if quiz in banners %}
+            <img src="{{ banners[quiz] }}" alt="" loading="lazy">
+            {% else %}
+            <span class="quiz-banner-none">?</span>
+            {% endif %}
+          </div>
           <h3>{{ quiz }}</h3>
           <p>Times Played: {{ plays[quiz] }}</p>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">

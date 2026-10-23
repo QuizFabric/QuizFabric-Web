@@ -1,291 +1,220 @@
-/* Modern UI Overhaul */
+/* ----------------------------------------------------------------------------
+   QuizFabric theme — matches the 3DS client: animated pink->purple gradient,
+   drifting bubbles, glass panels, tile buttons.
+   ---------------------------------------------------------------------------- */
 :root {
-    --primary-color: #4f46e5;
-    --secondary-color: #7c3aed;
-    --accent-color: #f59e0b;
-    --danger-color: #ef4444;
-    --success-color: #10b981;
-    --warning-color: #f59e0b;
-    --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --card-bg: rgba(255, 255, 255, 0.95);
-    --text-primary: #1f2937;
-    --text-secondary: #6b7280;
-    --shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    --border-radius: 12px;
+    --tl: #FF8ACD; --tr: #EE63C6; --bl: #8C46E8; --br: #602AB0;
+    --ink:  #2E1046;
+    --good: #3AD6A0; --bad: #FF5C74; --gold: #FFD05C;
+    --glass: rgba(255, 255, 255, 0.18);
+    --glass-hi: rgba(255, 255, 255, 0.36);
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.75);
+    --border-radius: 16px;
+    --shadow: 0 10px 30px rgba(40, 8, 60, 0.35);
+}
+
+/* Animated palette crossfade where @property is supported; static otherwise. */
+@property --tl { syntax: '<color>'; inherits: false; initial-value: #FF8ACD; }
+@property --tr { syntax: '<color>'; inherits: false; initial-value: #EE63C6; }
+@property --bl { syntax: '<color>'; inherits: false; initial-value: #8C46E8; }
+@property --br { syntax: '<color>'; inherits: false; initial-value: #602AB0; }
+@keyframes palette {
+    0%, 100% { --tl:#FF8ACD; --tr:#EE63C6; --bl:#8C46E8; --br:#602AB0; }
+    50%      { --tl:#FF6AAD; --tr:#CB5CE2; --bl:#703AD6; --br:#461E96; }
+}
+
+html, body {
+    margin: 0; padding: 0;
+    min-height: 100vh;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--background);
+    background: linear-gradient(135deg, #FF8ACD, #EE63C6, #8C46E8, #602AB0);
     background-attachment: fixed;
-    margin: 0;
-    padding: 0;
-    min-height: 100vh;
-    color: var(--text-primary);
+    color: #fff;
     line-height: 1.6;
+    padding-bottom: 24px;
+}
+html::before {
+    content: ''; position: fixed; inset: 0; z-index: -2;
+    background: linear-gradient(135deg, var(--tl), var(--tr), var(--bl), var(--br));
+    animation: palette 14s ease-in-out infinite;
 }
 
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
+/* CSS-only drifting bubbles */
+html::after, body::before, body::after {
+    content: ''; position: fixed; border-radius: 50%; z-index: -1;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.22), rgba(255,255,255,0.04));
+    animation: floatUp linear infinite;
 }
+html::after { width: 70px; height: 70px; left: 8vw;  bottom: -90px; animation-duration: 16s; }
+body::before { width: 110px; height: 110px; left: 55vw; bottom: -130px; animation-duration: 22s; animation-delay: -8s; }
+body::after { width: 45px; height: 45px; left: 82vw; bottom: -60px; animation-duration: 13s; animation-delay: -4s; }
+@keyframes floatUp {
+    0%   { transform: translate(0, 0); }
+    25%  { transform: translate(26px, -28vh); }
+    50%  { transform: translate(-18px, -55vh); }
+    75%  { transform: translate(22px, -82vh); }
+    100% { transform: translate(0, -112vh); }
+}
+
+.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
 
 .card {
-    background: var(--card-bg);
+    background: var(--glass);
     backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
-    padding: 2rem;
+    padding: 1.8rem;
     margin: 1rem 0;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #fff;
     transition: transform 0.2s, box-shadow 0.2s;
 }
+.card:hover { transform: translateY(-2px); box-shadow: 0 15px 35px rgba(20, 4, 35, 0.35); }
 
-.card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
-}
-
-h1, h2, h3 {
-    color: var(--text-primary);
-    margin-bottom: 1rem;
+h1, h2, h3, h4, h5 {
+    color: #fff;
     font-weight: 700;
+    text-shadow: 0 2px 8px rgba(40, 8, 60, 0.6);
+    margin-bottom: 1rem;
 }
-
 h1 {
-    font-size: 2.5rem;
+    font-size: 2.4rem;
     text-align: center;
-    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 2rem;
+    letter-spacing: 2px;
+    margin-bottom: 1.6rem;
 }
 
+/* Buttons — green like the 3DS SUBMIT tile. */
 .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 12px 24px;
-    border: none;
-    border-radius: var(--border-radius);
-    font-size: 1rem;
-    font-weight: 600;
-    text-decoration: none;
-    cursor: pointer;
-    transition: all 0.2s;
-    gap: 8px;
-    min-width: 120px;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 12px 24px; border: none; border-radius: 12px;
+    font-size: 1rem; font-weight: 700; text-decoration: none; cursor: pointer;
+    transition: transform 0.08s ease, filter 0.15s ease; gap: 8px; min-width: 110px;
 }
+.btn:active { transform: translateY(2px); }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-    color: white;
-    box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3);
+    background: linear-gradient(180deg, #4adfa8, #2cc989);
+    color: var(--ink) !important;
+    box-shadow: 0 3px 0 rgba(20, 110, 80, 0.55);
 }
-
-.btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
-}
+.btn-primary:hover { filter: brightness(1.05); color: var(--ink) !important; }
 
 .btn-secondary {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: var(--glass); color: #fff !important;
+    border: 1px solid rgba(255, 255, 255, 0.3);
 }
-
-.btn-secondary:hover {
-    background: rgba(255, 255, 255, 0.2);
-}
+.btn-secondary:hover { background: var(--glass-hi); }
 
 .btn-success {
-    background: linear-gradient(135deg, var(--success-color), #059669);
-    color: white;
+    background: linear-gradient(180deg, #4adfa8, #2cc989);
+    color: var(--ink) !important; box-shadow: 0 3px 0 rgba(20, 110, 80, 0.55);
 }
 
 .btn-danger {
-    background: linear-gradient(135deg, var(--danger-color), #dc2626);
-    color: white;
+    background: linear-gradient(180deg, #ff6d84, #e8445f);
+    color: #fff !important; box-shadow: 0 3px 0 rgba(120, 20, 45, 0.55);
 }
 
 .btn-warning {
-    background: linear-gradient(135deg, var(--warning-color), #d97706);
-    color: white;
+    background: linear-gradient(180deg, #ffdb7a, #ffc93d);
+    color: var(--ink) !important; box-shadow: 0 3px 0 rgba(140, 100, 10, 0.5);
 }
 
-.form-group {
-    margin-bottom: 1.5rem;
-}
+/* Forms */
+.form-group { margin-bottom: 1.4rem; }
+label { display: block; margin-bottom: 0.5rem; font-weight: 600; color: rgba(255,255,255,0.85); }
 
-label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 600;
-    color: var(--text-primary);
+input[type="text"], input[type="password"], input[type="number"], textarea, select, .form-control, .form-select {
+    width: 100%; box-sizing: border-box;
+    padding: 12px 14px; border-radius: 12px; font-size: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+    transition: border-color 0.2s, background 0.2s;
 }
-
-input[type="text"], input[type="password"], textarea, select {
-    width: 100%;
-    padding: 12px 16px;
-    border: 2px solid rgba(0, 0, 0, 0.1);
-    border-radius: var(--border-radius);
-    font-size: 1rem;
-    transition: border-color 0.2s, box-shadow 0.2s;
-    background: rgba(255, 255, 255, 0.8);
+input::placeholder, textarea::placeholder { color: rgba(255, 255, 255, 0.55); }
+input[type="text"]:focus, input[type="password"]:focus, textarea:focus,
+select:focus, .form-control:focus, .form-select:focus {
+    outline: none; border-color: #fff; background: rgba(255, 255, 255, 0.30);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15);
 }
+select option, .form-select option { color: #2E1046; background: #fff; }
 
-input[type="text"]:focus, input[type="password"]:focus, textarea:focus, select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-}
-
+/* Quiz lists */
 .quiz-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1rem;
-    list-style: none;
-    padding: 0;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem; list-style: none; padding: 0;
 }
-
 .quiz-item {
-    background: var(--card-bg);
-    border-radius: var(--border-radius);
-    padding: 1.5rem;
-    box-shadow: var(--shadow);
+    background: var(--glass); border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: var(--border-radius); padding: 1.4rem;
+    box-shadow: var(--shadow); color: #fff;
     transition: transform 0.2s, box-shadow 0.2s;
-    border: 1px solid rgba(255, 255, 255, 0.2);
 }
+.quiz-item:hover { transform: translateY(-4px); box-shadow: 0 15px 35px rgba(20, 4, 35, 0.4); }
+.quiz-item h3 { margin: 0 0 0.5rem 0; color: #fff; }
+.quiz-item p { margin: 0.4rem 0; color: var(--text-secondary); }
+.quiz-list li { margin-bottom: 8px; }
 
-.quiz-item:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
-}
+.question { font-size: 1.3rem; font-weight: 600; margin-bottom: 1rem; color: #fff; }
 
-.quiz-item h3 {
-    margin: 0 0 0.5rem 0;
-    color: var(--primary-color);
-}
+/* Alerts */
+.alert { padding: 1rem; border-radius: 12px; margin: 1rem 0; font-weight: 500; color: #fff; }
+.alert-success { background: rgba(58, 214, 160, 0.30); border: 1px solid var(--good); }
+.alert-error, .alert-danger { background: rgba(255, 92, 116, 0.30); border: 1px solid var(--bad); }
+.alert-warning { background: rgba(255, 208, 92, 0.25); border: 1px solid var(--gold); }
 
-.quiz-item p {
-    margin: 0.5rem 0;
-    color: var(--text-secondary);
+/* Action buttons used by the home page */
+.header-buttons { display: flex; gap: 10px; }
+.upload-btn, .edit-btn, .delete-btn {
+    border: none; border-radius: 10px; padding: 8px 16px;
+    text-decoration: none; font-size: 0.95rem; font-weight: 700; margin-left: 8px;
 }
+.upload-btn { background: var(--good); color: var(--ink) !important; }
+.edit-btn { background: var(--gold); color: var(--ink) !important; }
+.delete-btn { background: var(--bad); color: #fff !important; }
 
-.question {
-    font-size: 1.3rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-    color: var(--text-primary);
-}
-
-.answer {
-    margin: 0.5rem 0;
-}
-
-.answer input[type="radio"] {
-    margin-right: 0.5rem;
-}
-
-.alert {
-    padding: 1rem;
-    border-radius: var(--border-radius);
-    margin: 1rem 0;
-    font-weight: 500;
-}
-
-.alert-success {
-    background: rgba(16, 185, 129, 0.1);
-    border: 1px solid var(--success-color);
-    color: #065f46;
-}
-
-.alert-error {
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid var(--danger-color);
-    color: #991b1b;
-}
-
-.alert-warning {
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid var(--warning-color);
-    color: #92400e;
-}
+/* Tables (Bootstrap pages) */
+.table { color: #fff; --bs-table-bg: transparent; }
+.table thead th { border-color: rgba(255,255,255,0.25); }
+.table td, .table th { border-color: rgba(255,255,255,0.15); background: transparent; }
 
 @media (max-width: 768px) {
-    .container {
-        padding: 10px;
-    }
-    
-    h1 {
-        font-size: 2rem;
-    }
-    
-    .card {
-        padding: 1rem;
-    }
-    
-    .quiz-list {
-        grid-template-columns: 1fr;
-    }
-    
-    .btn {
-        width: 100%;
-        margin: 0.5rem 0;
-    }
-}
-.quiz-list li {
-  margin-bottom: 8px;
-}
-.header-buttons {
-    display: flex;
-    gap: 10px;
+    .container { padding: 10px; }
+    h1 { font-size: 1.8rem; }
+    .card { padding: 1rem; }
+    .quiz-list { grid-template-columns: 1fr; }
+    .btn { width: 100%; margin: 0.4rem 0; }
 }
 
-.upload-btn {
-    background-color: #28a745;
+/* Override light inline styles left over in some templates so text is never
+   white-on-white. !important beats the template <style> blocks. */
+.question-list, .host-container, .editquiz-container, .example-format {
+    background: rgba(255, 255, 255, 0.18) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
     color: #fff !important;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 18px;
-    text-decoration: none;
-    font-size: 1rem;
-    transition: background 0.2s;
-    margin-left: 10px;
 }
-.upload-btn:hover, .upload-btn:focus {
-    background-color: #218838;
-}
-
-.edit-btn {
-    background-color: #ffc107;
-    color: #212529 !important;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 18px;
-    text-decoration: none;
-    font-size: 1rem;
-    transition: background 0.2s;
-    margin-left: 10px;
-}
-.edit-btn:hover, .edit-btn:focus {
-    background-color: #e0a800;
-    color: #212529 !important;
-}
-
-.delete-btn {
-    background-color: #dc3545;
+.question-item {
     color: #fff !important;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 18px;
-    text-decoration: none;
-    font-size: 1rem;
-    transition: background 0.2s;
-    margin-left: 10px;
+    border-bottom-color: rgba(255, 255, 255, 0.15) !important;
 }
-.delete-btn:hover, .delete-btn:focus {
-    background-color: #bd2130;
+.loading-bar-container {
+    background: rgba(46, 16, 70, 0.85) !important;
+    color: #fff !important;
 }
+
+/* Quiz banner on list items: the photo on top, or a white ? on dark gray */
+.quiz-banner {
+    width: 100%; height: 120px;
+    border-radius: 10px; overflow: hidden; margin-bottom: 0.8rem;
+    background: #3b3b43;
+    display: flex; align-items: center; justify-content: center;
+}
+.quiz-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.quiz-banner-none { color: #fff; font-size: 40px; font-weight: bold; }

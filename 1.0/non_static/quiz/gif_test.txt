@@ -1,0 +1,4 @@
+gif test
+
+*ok
+ok

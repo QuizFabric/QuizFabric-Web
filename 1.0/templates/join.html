@@ -7,125 +7,291 @@
     <link rel="icon" href="/data/icon.png" type="image/png">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <link rel="apple-touch-icon" href="/data/icon.png">
-    <meta name="theme-color" content="#4f46e5">
+    <meta name="theme-color" content="#b83bd0">
     <meta name="description" content="A modern quiz application for creating and taking quizzes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="QuizFabric">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    {% if is_mobile %}
     <style>
-        input {
-            font-size: 16px;
-            padding: 12px;
+        /* ------------------------------------------------------------------
+           QuizFabric 3DS-style theme: animated pink->purple gradient,
+           drifting bubbles, glass panels, tile buttons.
+           ------------------------------------------------------------------ */
+        :root {
+            --tl: #FF8ACD; --tr: #EE63C6; --bl: #8C46E8; --br: #602AB0;
+            --ink:  #2E1046;
+            --good: #3AD6A0; --bad: #FF5C74; --gold: #FFD05C;
+            --glass: rgba(255, 255, 255, 0.18);
+            --glass-hi: rgba(255, 255, 255, 0.36);
         }
-        button {
-            font-size: 16px;
-            padding: 12px;
+        /* Crossfade between the two palettes the 3DS cycles through. */
+        @property --tl { syntax: '<color>'; inherits: false; initial-value: #FF8ACD; }
+        @property --tr { syntax: '<color>'; inherits: false; initial-value: #EE63C6; }
+        @property --bl { syntax: '<color>'; inherits: false; initial-value: #8C46E8; }
+        @property --br { syntax: '<color>'; inherits: false; initial-value: #602AB0; }
+        @keyframes palette {
+            0%, 100% { --tl:#FF8ACD; --tr:#EE63C6; --bl:#8C46E8; --br:#602AB0; }
+            50%      { --tl:#FF6AAD; --tr:#CB5CE2; --bl:#703AD6; --br:#461E96; }
         }
-        h2 {
-            font-size: 20px;
+        html, body {
+            margin: 0; padding: 0; min-height: 100%;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
         }
-    </style>
-    {% endif %}
-    <style>
-        .app-icon {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            height: 40px;
-            width: 40px;
-            z-index: 1000;
-            opacity: 0.9;
+        body {
+            background: linear-gradient(135deg, #FF8ACD, #EE63C6, #8C46E8, #602AB0);
+            background-attachment: fixed;
+            color: #fff;
+            min-height: 100vh;
+            padding-bottom: 24px;
         }
-        @media (max-width: 768px) {
-            .join-container {
-                padding: 15px;
-                max-width: 100%;
-            }
-            h1 {
-                font-size: 24px;
-            }
-            .game-code {
-                font-size: 18px;
-            }
-            .player-list li {
-                font-size: 16px;
-            }
-            .question-area {
-                padding: 15px;
-            }
-            .question-text {
-                font-size: 18px;
-            }
-            .answer-container {
-                padding: 10px;
-            }
-            .answer-option {
-                font-size: 16px;
-                padding: 12px;
-            }
-            .submit-answer {
-                font-size: 16px;
-                padding: 12px;
-            }
-            .leaderboard ol {
-                font-size: 16px;
-            }
+        /* Browsers with @property get the animated crossfade via ::before;
+           everyone else keeps the static gradient above. */
+        body.animated { animation: palette 14s ease-in-out infinite; }
+        body.animated::before {
+            content: ''; position: fixed; inset: 0; z-index: -2;
+            background: linear-gradient(135deg, var(--tl), var(--tr), var(--bl), var(--br));
+        }
+        /* Drifting bubbles */
+        .bubble {
+            position: fixed; bottom: -90px; z-index: -1; border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.20), rgba(255,255,255,0.04));
+            animation: floatUp linear infinite;
+        }
+        @keyframes floatUp {
+            0%   { transform: translate(0, 0); }
+            25%  { transform: translate(24px, -28vh); }
+            50%  { transform: translate(-18px, -55vh); }
+            75%  { transform: translate(20px, -82vh); }
+            100% { transform: translate(0, -112vh); }
+        }
+        /* Top bar */
+        .qf-top {
+            position: sticky; top: 0; z-index: 100;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 14px;
+            background: rgba(46, 16, 70, 0.45);
+            backdrop-filter: blur(6px);
+        }
+        .qf-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: 2px; }
+        .qf-brand img { height: 34px; width: 34px; }
+        .qf-home {
+            color: #fff; text-decoration: none; font-size: 13px;
+            background: rgba(58, 214, 160, 0.9); color: var(--ink);
+            padding: 8px 14px; border-radius: 999px; font-weight: 700;
+        }
+        /* Cards */
+        .qf-card {
+            max-width: 640px; margin: 18px auto;
+            background: var(--glass);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 18px;
+            padding: 22px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 30px rgba(40, 8, 60, 0.35);
+        }
+        .qf-title {
+            margin: 0 0 4px; font-size: 1.5em; text-align: center;
+            letter-spacing: 2px; text-shadow: 0 2px 8px rgba(40, 8, 60, 0.6);
+        }
+        .qf-sub { text-align: center; color: rgba(255,255,255,0.85); margin: 0 0 16px; font-size: 0.95em; }
+        .qf-pin {
+            display: inline-block; background: var(--gold); color: var(--ink);
+            font-weight: 800; letter-spacing: 4px; padding: 3px 14px; border-radius: 8px;
+        }
+        /* Inputs */
+        .qf-field { margin-bottom: 14px; }
+        .qf-field label {
+            display: block; font-size: 0.75em; letter-spacing: 2px;
+            text-transform: uppercase; color: rgba(255,255,255,0.75); margin-bottom: 5px;
+        }
+        .qf-field input[type=text] {
+            width: 100%; box-sizing: border-box; padding: 13px 14px;
+            border-radius: 12px; border: 1px solid rgba(255,255,255,0.28);
+            background: rgba(255,255,255,0.22); color: #fff; font-size: 16px;
+            outline: none;
+        }
+        .qf-field input[type=text]:focus { border-color: #fff; background: rgba(255,255,255,0.30); }
+        .qf-field input::placeholder { color: rgba(255,255,255,0.55); }
+        /* Avatar grid */
+        #avatar-selector {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+            gap: 10px; margin: 6px 0 16px;
+        }
+        .av-tile {
+            background: rgba(255,255,255,0.16); border: 2px solid transparent;
+            border-radius: 14px; padding: 8px 4px; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            color: rgba(255,255,255,0.85); font-size: 11px;
+            transition: transform 0.08s ease, background 0.15s ease;
+        }
+        .av-tile img { height: 44px; width: 44px; object-fit: contain; }
+        .av-tile.selected {
+            border-color: var(--gold); background: rgba(255, 208, 92, 0.22);
+        }
+        .av-tile:active { transform: scale(0.95); }
+        /* Buttons */
+        .qf-btn {
+            width: 100%; border: none; border-radius: 14px;
+            padding: 15px; font-size: 17px; font-weight: 800; letter-spacing: 3px;
+            cursor: pointer; color: var(--ink);
+            background: linear-gradient(180deg, #4adfa8, #2cc989);
+            box-shadow: 0 3px 0 rgba(20, 110, 80, 0.55);
+            transition: transform 0.08s ease, filter 0.15s ease;
+        }
+        .qf-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(20,110,80,0.55); }
+        .qf-btn:disabled {
+            background: rgba(255,255,255,0.25); color: rgba(255,255,255,0.7);
+            box-shadow: none; cursor: default;
+        }
+        /* Question */
+        .qf-question {
+            font-size: 1.35em; font-weight: 700; text-align: center;
+            line-height: 1.35; margin: 4px 0 14px;
+            text-shadow: 0 2px 8px rgba(40, 8, 60, 0.5);
+        }
+        #question-image img {
+            max-width: 100%; max-height: 40vh; object-fit: contain;
+            border-radius: 12px; margin: 0.4rem 0;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+            background: rgba(255,255,255,0.15);
+        }
+        /* Answer tiles - the 3DS 8-colour cycle */
+        .qf-answers { display: grid; gap: 10px; margin: 4px 0 16px; }
+        .answer-tile {
+            display: flex; align-items: center; gap: 10px;
+            border-radius: 14px; padding: 13px 14px; cursor: pointer;
+            font-weight: 700; font-size: 16px; color: #fff;
+            box-shadow: 0 3px 0 rgba(40, 8, 60, 0.35);
+            transition: transform 0.08s ease;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.25);
+        }
+        .answer-tile input { display: none; }
+        .answer-tile:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(40,8,60,0.35); }
+        .answer-tile.selected { outline: 3px solid #fff; outline-offset: -3px; }
+        .answer-tile.locked { opacity: 0.45; }
+        /* Timer bar */
+        .qf-timer-track {
+            height: 10px; border-radius: 999px; margin: 8px 0 4px;
+            background: rgba(255,255,255,0.22); overflow: hidden;
+        }
+        .qf-timer-fill { height: 100%; width: 100%; border-radius: 999px; transition: width 1s linear; }
+        .qf-timer-text { text-align: center; font-size: 0.85em; color: rgba(255,255,255,0.9); margin-bottom: 10px; }
+        /* Feedback */
+        .qf-feedback {
+            text-align: center; font-size: 1.5em; font-weight: 800; letter-spacing: 2px;
+            padding: 14px; border-radius: 14px; margin-top: 12px;
+        }
+        .qf-feedback.correct   { background: rgba(58, 214, 160, 0.35); }
+        .qf-feedback.incorrect { background: rgba(255, 92, 116, 0.35); }
+        .qf-feedback .qf-answer { display: block; font-size: 0.55em; margin-top: 6px; letter-spacing: 1px; color: var(--gold); font-weight: 700; }
+        /* Leaderboard */
+        .qf-lb-row {
+            display: flex; align-items: center; gap: 10px;
+            background: var(--glass); border-radius: 12px;
+            padding: 9px 12px; margin-bottom: 7px;
+        }
+        .qf-lb-rank { font-weight: 800; width: 22px; text-align: center; }
+        .qf-lb-rank.first { color: var(--gold); }
+        .qf-lb-row img { height: 24px; width: 24px; object-fit: contain; }
+        .qf-lb-name { flex: 1; font-weight: 600; }
+        .qf-lb-name.left { color: rgba(255,255,255,0.55); }
+        .qf-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+        .qf-dot.good { background: var(--good); }
+        .qf-dot.bad  { background: var(--bad); }
+        .qf-lb-score { font-weight: 800; color: var(--gold); }
+        .qf-lb-correct { text-align: center; color: var(--gold); font-weight: 700; margin: 4px 0 10px; }
+        /* Popup */
+        .qf-modal {
+            position: fixed; inset: 0; z-index: 10000;
+            background: rgba(20, 4, 35, 0.6); backdrop-filter: blur(3px);
+            display: flex; justify-content: center; align-items: center;
+        }
+        .qf-modal-card {
+            background: linear-gradient(135deg, #b23ae0, #6b2ec0);
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 22px 28px; border-radius: 18px; text-align: center;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+        }
+        .qf-modal-card button {
+            margin-top: 12px; border: none; border-radius: 10px;
+            background: var(--good); color: var(--ink);
+            padding: 9px 26px; font-weight: 800; letter-spacing: 2px; cursor: pointer;
         }
     </style>
 </head>
 <body>
-    <div style="position: fixed; top: 10px; right: 10px; display: flex; gap: 10px; align-items: center; z-index: 1000;">
-        <a href="{{ url_for('home') }}" style="background: green; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px;">Home</a>
-        <img src="/data/icon.png" alt="QuizFabric" style="height: 40px; width: 40px; opacity: 0.9;">
+    <div class="qf-top">
+        <div class="qf-brand">
+            <img src="/data/icon.png" alt="QuizFabric">
+            <span>QUIZFABRIC</span>
+        </div>
+        <a href="{{ url_for('home') }}" class="qf-home">Home</a>
     </div>
-    <div class="quiz-container">
-        <h2>QuizFabric - Join Quiz</h2>
-        <div id="join-form">
-            <label for="code">Game Code:</label>
-            <input type="text" id="code" placeholder="Enter Game Code" required style="padding: 8px; margin: 5px; width: 100%;">
-            <label for="name">Your Name:</label>
-            <input type="text" id="name" placeholder="Your Name" required style="padding: 8px; margin: 5px; width: 100%;">
-            <label for="avatar">Select Avatar:</label>
-            <div id="avatar-selector" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 15px; margin: 10px 0;">
-                <!-- Avatars will be loaded here -->
-            </div>
-            <input type="hidden" id="selected-avatar" value="">
-            <button id="join-btn" class="quiz-btn" style="width: 100%;">Join Game</button>
+
+    <div class="qf-card" id="join-form">
+        <h2 class="qf-title">JOIN A QUIZ</h2>
+        <p class="qf-sub">Enter the game code shown on the host screen</p>
+        <div class="qf-field">
+            <label for="code">Game Code</label>
+            <input type="text" id="code" placeholder="4-digit code" required autocomplete="off">
         </div>
-        <div id="lobby" style="display:none; text-align: center;">
-            <p>Waiting for host to start the game...</p>
+        <div class="qf-field">
+            <label for="name">Your Name</label>
+            <input type="text" id="name" placeholder="Your Name" required autocomplete="off">
         </div>
-        <div id="question-area" style="display:none;">
-            <div class="question" id="question"></div>
-            <div id="question-image" style="display:none; text-align:center; margin: 1rem 0;"></div>
-            <form id="answer-form">
-                <div id="answer-container"></div>
-                <input type="text" id="answer" name="answer" placeholder="Your Answer" style="padding: 8px; margin: 5px; width: 100%; display: block;">
-                <button type="submit" id="submit-answer" class="quiz-btn" style="width: 100%;">Submit Answer</button>
-            </form>
-            <div id="answer-feedback" class="answer-feedback" style="display:none;"></div>
+        <div class="qf-field">
+            <label>Pick an Avatar</label>
+            <div id="avatar-selector"><!-- avatars load here --></div>
         </div>
-        <div id="leaderboard" style="display:none;">
-            <h3>Leaderboard</h3>
-            <div id="points-display" style="display:none; text-align: center; padding: 15px; background: #f0f0f0; border-radius: 5px; margin-bottom: 15px;">
-                <div style="font-size: 1.2em; margin-bottom: 10px;">
-                    <strong>Your Points This Question: <span id="question-points" style="color: #28a745;">0</span></strong>
-                </div>
-                <hr style="margin: 10px 0; border: 1px solid #ddd;">
-                <div style="font-size: 1.2em;">
-                    <strong>Your Points: <span id="total-points" style="color: #007bff;">0</span></strong>
-                </div>
-            </div>
-            <p id="leaderboard-correct-answer" style="display:none;">Correct answer was: <span id="leaderboard-correct-answer-text"></span></p>
-            <ol id="leaderboard-list" style="font-size: 1.5em;"></ol>
+        <input type="hidden" id="selected-avatar" value="">
+        <button id="join-btn" class="qf-btn">JOIN GAME</button>
+    </div>
+
+    <div class="qf-card" id="lobby" style="display:none;">
+        <h2 class="qf-title">YOU'RE IN!</h2>
+        <p class="qf-sub" id="lobby-quiz">Waiting for the host to start the game...</p>
+        <p class="qf-sub"><span class="qf-pin" id="lobby-pin"></span></p>
+        <div style="text-align:center;">
+            <span class="qf-dot good"></span>&nbsp;
+            <span class="qf-dot good" style="opacity:.5;"></span>&nbsp;
+            <span class="qf-dot good" style="opacity:.25;"></span>
         </div>
-        <div id="final-leaderboard" style="display:none;">
-            <h3>Final Leaderboard</h3>
-            <ol id="final-leaderboard-list" style="font-size: 1.5em;"></ol>
+    </div>
+
+    <div class="qf-card" id="question-area" style="display:none;">
+        <div class="qf-question" id="question"></div>
+        <div id="question-image" style="display:none; text-align:center;"></div>
+        <form id="answer-form">
+            <div id="answer-container" class="qf-answers"></div>
+            <input type="text" id="answer" name="answer" placeholder="Your Answer"
+                   style="width:100%; box-sizing:border-box; padding:13px 14px; border-radius:12px;
+                          border:1px solid rgba(255,255,255,0.28); background:rgba(255,255,255,0.22);
+                          color:#fff; font-size:16px; display:block; outline:none;">
+            <div class="qf-timer-track"><div class="qf-timer-fill" id="timer-fill"></div></div>
+            <div class="qf-timer-text" id="timer-text"></div>
+            <button type="submit" id="submit-answer" class="qf-btn">SUBMIT</button>
+        </form>
+        <div class="qf-feedback" id="answer-feedback" style="display:none;"></div>
+    </div>
+
+    <div class="qf-card" id="leaderboard" style="display:none;">
+        <h2 class="qf-title">LEADERBOARD</h2>
+        <p class="qf-sub" id="leaderboard-correct-answer" style="display:none;">
+            Correct answer: <span id="leaderboard-correct-answer-text" class="qf-lb-correct"></span>
+        </p>
+        <div id="points-display" style="display:none; text-align:center; margin-bottom:12px;
+             background:var(--glass); border-radius:12px; padding:12px;">
+            <div><strong>This question: <span id="question-points" style="color:var(--good);">0</span></strong></div>
+            <div><strong>Total: <span id="total-points" style="color:var(--gold);">0</span></strong></div>
         </div>
+        <div id="leaderboard-list"></div>
+    </div>
+
+    <div class="qf-card" id="final-leaderboard" style="display:none;">
+        <h2 class="qf-title">FINAL RESULTS</h2>
+        <div id="final-leaderboard-list"></div>
     </div>
 
     <script>
@@ -136,7 +302,49 @@
         let inactivityTimer = null;
         let playerName = '';
         let previousScore = 0;
+        let timerInterval = null;
         const INACTIVITY_TIMEOUT = 3000; // 3 seconds
+        const POINT_WINDOW = 20; // seconds until points hit zero
+
+        // Bubbles, like the 3DS background.
+        for (let i = 0; i < 12; i++) {
+            const b = document.createElement('div');
+            b.className = 'bubble';
+            const size = 14 + Math.random() * 60;
+            b.style.width = size + 'px';
+            b.style.height = size + 'px';
+            b.style.left = (Math.random() * 100) + 'vw';
+            b.style.animationDuration = (9 + Math.random() * 14) + 's';
+            b.style.animationDelay = (-Math.random() * 20) + 's';
+            document.body.appendChild(b);
+        }
+        // Crossfading palette (browsers without @property just keep the static one).
+        if (CSS.registerProperty) document.body.classList.add('animated');
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            const fill = document.getElementById('timer-fill');
+            const txt = document.getElementById('timer-text');
+            const tick = () => {
+                const secs = (Date.now() - start_time) / 1000;
+                const pct = Math.max(0, 1 - secs / POINT_WINDOW);
+                const pts = Math.max(0, Math.round(1000 - secs * 50));
+                fill.style.width = (pct * 100) + '%';
+                fill.style.background = mix('#FF5C74', '#3AD6A0', pct); // bad -> good
+                txt.textContent = pts + ' points available';
+                if (pct <= 0) clearInterval(timerInterval);
+            };
+            tick();
+            timerInterval = setInterval(tick, 200);
+        }
+        function mix(a, b, t) { // hex colour lerp
+            const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+            const r = Math.round(((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * t);
+            const g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * t);
+            const bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * t);
+            return '#' + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
+        }
+        function stopTimer() { clearInterval(timerInterval); }
 
         // Load avatars from server
         async function loadAvatars() {
@@ -144,32 +352,23 @@
                 const response = await fetch('/get_avatars');
                 const data = await response.json();
                 const selectorDiv = document.getElementById('avatar-selector');
-                selectorDiv.innerHTML = ''; // Clear existing
-                
+                selectorDiv.innerHTML = '';
+
                 data.avatars.forEach(avatar => {
-                    const buttonContainer = document.createElement('div');
-                    buttonContainer.style.cssText = 'text-align: center; cursor: pointer;';
-                    
-                    const button = document.createElement('button');
-                    button.type = 'button';
-                    button.style.cssText = 'padding: 5px; border: 2px solid #ccc; border-radius: 5px; background: white; cursor: pointer; min-height: 60px; min-width: 60px; display: flex; align-items: center; justify-content: center;';
-                    
+                    const tile = document.createElement('div');
+                    tile.className = 'av-tile';
+
                     const img = document.createElement('img');
                     img.src = `/data/avatars/${avatar}.png`;
-                    img.style.height = '50px';
-                    img.style.width = '50px';
-                    img.style.objectFit = 'contain';
-                    img.onerror = () => { button.textContent = '●'; };
-                    button.appendChild(img);
-                    button.onclick = () => selectAvatar(avatar, button);
-                    
-                    const caption = document.createElement('div');
+                    img.onerror = () => { img.style.display = 'none'; };
+                    tile.appendChild(img);
+
+                    const caption = document.createElement('span');
                     caption.textContent = avatar;
-                    caption.style.cssText = 'margin-top: 5px; font-size: 0.8em; color: #666;';
-                    
-                    buttonContainer.appendChild(button);
-                    buttonContainer.appendChild(caption);
-                    selectorDiv.appendChild(buttonContainer);
+                    tile.appendChild(caption);
+
+                    tile.onclick = () => selectAvatar(avatar, tile);
+                    selectorDiv.appendChild(tile);
                 });
             } catch (error) {
                 console.error('Error loading avatars:', error);
@@ -177,15 +376,11 @@
         }
 
         // Select avatar
-        function selectAvatar(avatarName, button) {
-            // Remove previous selection
-            document.querySelectorAll('#avatar-selector button').forEach(btn => {
-                btn.style.borderColor = '#ccc';
-                btn.style.background = 'white';
+        function selectAvatar(avatarName, tile) {
+            document.querySelectorAll('#avatar-selector .av-tile').forEach(t => {
+                t.classList.remove('selected');
             });
-            // Highlight selected
-            button.style.borderColor = '#007bff';
-            button.style.background = '#e7f3ff';
+            tile.classList.add('selected');
             document.getElementById('selected-avatar').value = avatarName;
         }
 
@@ -199,43 +394,28 @@
             document.getElementById('code').value = urlCode;
         }
 
-        // Function to start the disconnect timer (when tab is hidden)
-        function startDisconnectTimer() {
-            if (inactivityTimer) {
-                clearTimeout(inactivityTimer);
-            }
-            inactivityTimer = setTimeout(() => {
-                console.log('Tab hidden for 3 seconds, disconnecting...');
-                socket.disconnect();
-            }, INACTIVITY_TIMEOUT);
-        }
-
-        // Track tab/window visibility only
+        // Disconnect when the tab is hidden for a while.
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
-                // Tab switched away or window closed
-                console.log('Tab hidden, starting disconnect timer');
-                startDisconnectTimer();
+                clearTimeout(inactivityTimer);
+                inactivityTimer = setTimeout(() => socket.disconnect(), INACTIVITY_TIMEOUT);
             } else {
-                // Tab came back into view
-                console.log('Tab visible again, stopping disconnect timer');
-                if (inactivityTimer) {
-                    clearTimeout(inactivityTimer);
-                    inactivityTimer = null;
-                }
+                clearTimeout(inactivityTimer);
+                inactivityTimer = null;
             }
         });
 
         document.getElementById('join-btn').addEventListener('click', () => {
-            code = document.getElementById('code').value;
-            playerName = document.getElementById('name').value;
+            code = document.getElementById('code').value.trim();
+            playerName = document.getElementById('name').value.trim();
             const avatar = document.getElementById('selected-avatar').value;
-            
+
             if (!code || !playerName || !avatar) {
-                alert('Please enter game code, your name, and select an avatar!');
+                alert('Please enter the game code, your name, and pick an avatar!');
                 return;
             }
-            
+            document.getElementById('join-btn').disabled = true;
+            document.getElementById('join-btn').textContent = 'JOINING...';
             socket.emit('join_game', {code: code, name: playerName, avatar: avatar});
         });
 
@@ -243,87 +423,195 @@
             hasJoined = true;
             document.getElementById('join-form').style.display = 'none';
             document.getElementById('lobby').style.display = 'block';
-            // Display quiz name
-            const quizName = data.quiz_name;
-            document.querySelector('h2').textContent = `Playing quiz ${quizName}`;
-            document.getElementById('lobby').innerHTML = `<p>Joined quiz: <strong>${quizName}</strong></p><p>Waiting for host to start the game...</p>`;
+            document.getElementById('lobby-quiz').textContent =
+                `Joined quiz: ${data.quiz_name} — waiting for the host to start...`;
+            document.getElementById('lobby-pin').textContent = 'PIN ' + code;
         });
 
         socket.on('error', (data) => {
+            document.getElementById('join-btn').disabled = false;
+            document.getElementById('join-btn').textContent = 'JOIN GAME';
             alert(data.message);
         });
 
+        const TILE_COLORS = [
+            '#FF4F81', '#7C4DFF', '#FF9F45', '#38E0C8',
+            '#FF6EC7', '#6884FF', '#C474FF', '#5AD68C'
+        ];
+
+        let currentQuestionType = 'type';
+        let puzzleItems = [];
+
+        function renderPuzzle(container) {
+            container.innerHTML = '';
+            puzzleItems.forEach(function(item, idx) {
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.justifyContent = 'space-between';
+                row.style.alignItems = 'center';
+                row.style.padding = '0.6rem 0.75rem';
+                row.style.marginBottom = '0.5rem';
+                row.style.border = '2px solid rgba(255,255,255,0.25)';
+                row.style.borderRadius = '10px';
+                // Same colored tiles as multiple choice answers
+                row.style.background =
+                    'linear-gradient(180deg,' + TILE_COLORS[idx % 8] + ',' +
+                    mix(TILE_COLORS[idx % 8], '#2E1046', 0.25) + ')';
+                row.style.color = '#fff';
+                const label = document.createElement('span');
+                label.textContent = item;
+                const controls = document.createElement('span');
+                controls.style.display = 'flex';
+                controls.style.gap = '0.35rem';
+                const up = document.createElement('button');
+                up.type = 'button';
+                up.textContent = '▲';
+                up.dataset.idx = idx;
+                up.dataset.dir = -1;
+                up.disabled = idx === 0;
+                const down = document.createElement('button');
+                down.type = 'button';
+                down.textContent = '▼';
+                down.dataset.idx = idx;
+                down.dataset.dir = 1;
+                down.disabled = idx === puzzleItems.length - 1;
+                [up, down].forEach(btn => {
+                    btn.style.background = 'rgba(0,0,0,0.35)';
+                    btn.style.color = '#fff';
+                    btn.style.border = 'none';
+                    btn.style.borderRadius = '6px';
+                    btn.style.padding = '0.25rem 0.6rem';
+                    btn.style.fontSize = '0.8rem';
+                    btn.style.cursor = 'pointer';
+                    btn.style.opacity = btn.disabled ? '0.4' : '1';
+                });
+                controls.appendChild(up);
+                controls.appendChild(down);
+                row.appendChild(label);
+                row.appendChild(controls);
+                container.appendChild(row);
+            });
+        }
+
         socket.on('new_question', (data) => {
+            currentQuestionType = data.type || 'type';
+            puzzleItems = [];
             start_time = Date.now();
             document.getElementById('lobby').style.display = 'none';
             document.getElementById('leaderboard').style.display = 'none';
             document.getElementById('final-leaderboard').style.display = 'none';
             document.getElementById('question-area').style.display = 'block';
             document.getElementById('question').textContent = data.question;
+
             // Show image if provided
             const qImgDiv = document.getElementById('question-image');
+            qImgDiv.innerHTML = '';
             if (data.images && data.images.length > 0) {
-                qImgDiv.innerHTML = '';
                 data.images.forEach(src => {
                     const img = document.createElement('img');
                     img.src = src;
-                    img.style.maxWidth = '90%';
-                    img.style.maxHeight = '60vh';
-                    img.style.objectFit = 'contain';
-                    img.style.borderRadius = '8px';
-                    img.style.boxShadow = '0 6px 20px rgba(0,0,0,0.2)';
-                    img.style.margin = '0.5rem';
                     qImgDiv.appendChild(img);
                 });
                 qImgDiv.style.display = 'block';
             } else {
                 qImgDiv.style.display = 'none';
-                qImgDiv.innerHTML = '';
             }
+
             document.getElementById('answer-feedback').style.display = 'none';
-            document.getElementById('submit-answer').disabled = false;
-            document.getElementById('submit-answer').textContent = 'Submit Answer';
-            document.getElementById('submit-answer').style.backgroundColor = '';
+            const submitBtn = document.getElementById('submit-answer');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'SUBMIT';
+
             if (data.type === 'mc') {
                 const container = document.getElementById('answer-container');
                 container.innerHTML = '';
+                container.className = 'qf-answers';
                 data.answers.forEach((ans, i) => {
                     const label = document.createElement('label');
-                    label.innerHTML = `<input type="radio" name="answer" value="${i}" required> ${ans}<br>`;
+                    label.className = 'answer-tile';
+                    label.style.background =
+                        'linear-gradient(180deg,' + TILE_COLORS[i % 8] + ',' +
+                        mix(TILE_COLORS[i % 8], '#2E1046', 0.25) + ')';
+                    label.innerHTML =
+                        `<input type="radio" name="answer" value="${i}" required>` +
+                        `<span>${ans}</span>`;
+                    label.addEventListener('click', () => {
+                        document.querySelectorAll('.answer-tile').forEach(t =>
+                            t.classList.remove('selected'));
+                        label.classList.add('selected');
+                    });
                     container.appendChild(label);
                 });
+                document.getElementById('answer').style.display = 'none';
+            } else if (data.type === 'slider') {
+                const container = document.getElementById('answer-container');
+                container.innerHTML = '';
+                container.className = 'qf-answers';
+                const wrap = document.createElement('div');
+                wrap.style.width = '100%';
+                const mid = (data.min + data.max) / 2;
+                wrap.innerHTML =
+                    `<input type="range" id="slider-input" min="${data.min}" max="${data.max}" step="any" value="${mid}" style="width:100%;" oninput="document.getElementById('slider-value').textContent = this.value;">` +
+                    `<div style="text-align:center; font-size:1.3em; font-weight:bold; color:#fff;"><span id="slider-value">${mid}</span></div>`;
+                container.appendChild(wrap);
+                document.getElementById('answer').style.display = 'none';
+            } else if (data.type === 'puzzle') {
+                const container = document.getElementById('answer-container');
+                container.className = 'qf-answers';
+                puzzleItems = (data.answers || []).slice();
+                renderPuzzle(container);
+                // onclick assignment (not addEventListener) so repeated
+                // questions don't stack handlers
+                container.onclick = function(e) {
+                    const btn = e.target.closest('button[data-idx]');
+                    if (!btn || btn.disabled) return;
+                    const idx = parseInt(btn.dataset.idx, 10);
+                    const dir = parseInt(btn.dataset.dir, 10);
+                    [puzzleItems[idx], puzzleItems[idx + dir]] = [puzzleItems[idx + dir], puzzleItems[idx]];
+                    renderPuzzle(container);
+                };
                 document.getElementById('answer').style.display = 'none';
             } else {
                 document.getElementById('answer-container').innerHTML = '';
                 document.getElementById('answer').style.display = 'block';
                 document.getElementById('answer').value = '';
             }
+            startTimer();
         });
 
         document.getElementById('answer-form').addEventListener('submit', (e) => {
             e.preventDefault();
             let answer;
-            const checked = document.querySelector('input[name="answer"]:checked');
-            if (checked) {
-                answer = parseInt(checked.value);
+            if (currentQuestionType === 'puzzle') {
+                answer = puzzleItems;
+            } else if (currentQuestionType === 'slider') {
+                answer = parseFloat(document.getElementById('slider-input').value);
             } else {
-                answer = document.getElementById('answer').value;
+                const checked = document.querySelector('input[name="answer"]:checked');
+                if (checked) {
+                    answer = parseInt(checked.value);
+                } else {
+                    answer = document.getElementById('answer').value;
+                }
             }
             const time_taken = (Date.now() - start_time) / 1000;
             socket.emit('submit_answer', {code: code, answer: answer, time_taken: time_taken});
+            stopTimer();
             document.getElementById('submit-answer').disabled = true;
-            document.getElementById('submit-answer').textContent = 'Submitted';
-            document.getElementById('submit-answer').style.backgroundColor = 'grey';
+            document.getElementById('submit-answer').textContent = 'ANSWER LOCKED IN';
+            document.querySelectorAll('.answer-tile').forEach(t => t.classList.add('locked'));
         });
 
         socket.on('answer_revealed', (data) => {
             const feedback = document.getElementById('answer-feedback');
             if (data.correct) {
-                feedback.textContent = 'Correct!';
-                feedback.className = 'answer-feedback correct';
+                feedback.innerHTML = 'CORRECT!';
+                feedback.className = 'qf-feedback correct';
             } else {
-                feedback.textContent = `Incorrect. Correct answer: ${data.correct_answer}`;
-                feedback.className = 'answer-feedback incorrect';
+                feedback.innerHTML = 'NOT QUITE' +
+                    (data.correct_answer
+                        ? `<span class="qf-answer">ANSWER: ${data.correct_answer}</span>` : '');
+                feedback.className = 'qf-feedback incorrect';
             }
             feedback.style.display = 'block';
         });
@@ -331,57 +619,55 @@
         socket.on('leaderboard', (data) => {
             document.getElementById('question-area').style.display = 'none';
             document.getElementById('leaderboard').style.display = 'block';
-            
-            // Find this player's score in the leaderboard
+
             let currentScore = 0;
-            let playerFound = false;
             data.leaderboard.forEach((item) => {
-                if (item.name === playerName) {
-                    currentScore = item.score;
-                    playerFound = true;
-                }
+                if (item.name === playerName) currentScore = item.score;
             });
-            
-            // Calculate points earned this question
             const pointsThisQuestion = currentScore - previousScore;
             previousScore = currentScore;
-            
-            // Show points display
+
             document.getElementById('question-points').textContent = Math.max(0, pointsThisQuestion);
             document.getElementById('total-points').textContent = currentScore;
             document.getElementById('points-display').style.display = 'block';
-            
-            const ol = document.getElementById('leaderboard-list');
-            ol.innerHTML = '';
+
+            const list = document.getElementById('leaderboard-list');
+            list.innerHTML = '';
             data.leaderboard.forEach((item, index) => {
-                const li = document.createElement('li');
-                const status = item.last_correct === null ? 'No answer' : item.last_correct ? 'Correct' : 'Incorrect';
-                const submitted = data.submitted_answers ? data.submitted_answers[item.name] || 'N/A' : 'N/A';
-                
-                // Create container for avatar and text
-                const container = document.createElement('div');
-                container.style.display = 'flex';
-                container.style.alignItems = 'center';
-                container.style.gap = '10px';
-                
-                // Add avatar image if exists
+                const row = document.createElement('div');
+                row.className = 'qf-lb-row';
+
+                const rank = document.createElement('span');
+                rank.className = 'qf-lb-rank' + (index === 0 ? ' first' : '');
+                rank.textContent = (index + 1);
+                row.appendChild(rank);
+
                 if (item.avatar) {
                     const img = document.createElement('img');
                     img.src = `/data/avatars/${item.avatar}.png`;
-                    img.style.height = '1.2em';
-                    img.style.width = '1.2em';
-                    img.style.objectFit = 'contain';
-                    img.onerror = () => { img.textContent = '●'; };
-                    container.appendChild(img);
+                    img.onerror = () => { img.style.display = 'none'; };
+                    row.appendChild(img);
                 }
-                
-                // Add text
-                const displayName = item.left ? `<span style="color: purple;">(Left)</span> ${item.name}` : item.name;
-                text.innerHTML = `${displayName}: <span style="color: red;">${item.score}</span> points (${status}) - Answered: ${submitted}`;
-                container.appendChild(text);
-                li.appendChild(container);
-                ol.appendChild(li);
+
+                const name = document.createElement('span');
+                name.className = 'qf-lb-name' + (item.left ? ' left' : '');
+                name.textContent = item.left ? '(Left) ' + item.name : item.name;
+                row.appendChild(name);
+
+                if (item.last_correct !== null && item.last_correct !== undefined) {
+                    const dot = document.createElement('span');
+                    dot.className = 'qf-dot ' + (item.last_correct ? 'good' : 'bad');
+                    row.appendChild(dot);
+                }
+
+                const score = document.createElement('span');
+                score.className = 'qf-lb-score';
+                score.textContent = item.score;
+                row.appendChild(score);
+
+                list.appendChild(row);
             });
+
             if (data.correct_answer) {
                 document.getElementById('leaderboard-correct-answer-text').textContent = data.correct_answer;
                 document.getElementById('leaderboard-correct-answer').style.display = 'block';
@@ -391,54 +677,45 @@
         socket.on('final_leaderboard', (data) => {
             document.getElementById('leaderboard').style.display = 'none';
             document.getElementById('final-leaderboard').style.display = 'block';
-            const ol = document.getElementById('final-leaderboard-list');
-            ol.innerHTML = '';
+            const list = document.getElementById('final-leaderboard-list');
+            list.innerHTML = '';
             data.leaderboard.forEach((item, index) => {
-                const li = document.createElement('li');
-                
-                // Create container for avatar and text
-                const container = document.createElement('div');
-                container.style.display = 'flex';
-                container.style.alignItems = 'center';
-                container.style.gap = '10px';
-                
-                // Add avatar image if exists
+                const row = document.createElement('div');
+                row.className = 'qf-lb-row';
+
+                const rank = document.createElement('span');
+                rank.className = 'qf-lb-rank' + (index === 0 ? ' first' : '');
+                rank.textContent = (index + 1);
+                row.appendChild(rank);
+
                 if (item.avatar) {
                     const img = document.createElement('img');
                     img.src = `/data/avatars/${item.avatar}.png`;
-                    img.style.height = '1.2em';
-                    img.style.width = '1.2em';
-                    img.style.objectFit = 'contain';
-                    img.onerror = () => { img.textContent = '●'; };
-                    container.appendChild(img);
+                    img.onerror = () => { img.style.display = 'none'; };
+                    row.appendChild(img);
                 }
-                
-                // Add text
-                const text = document.createElement('span');
-                const displayName = item.left ? `<span style="color: purple;">(Left)</span> ${item.name}` : item.name;
-                text.innerHTML = `${displayName}: <span style="color: red;">${item.score}</span> points`;
-                container.appendChild(text);
-                li.appendChild(container);
-                ol.appendChild(li);
+
+                const name = document.createElement('span');
+                name.className = 'qf-lb-name' + (item.left ? ' left' : '');
+                name.textContent = item.left ? '(Left) ' + item.name : item.name;
+                row.appendChild(name);
+
+                const score = document.createElement('span');
+                score.className = 'qf-lb-score';
+                score.textContent = item.score;
+                row.appendChild(score);
+
+                list.appendChild(row);
             });
         });
+
         socket.on('show_popup', (data) => {
             const modal = document.createElement('div');
-            modal.style.position = 'fixed';
-            modal.style.top = '0';
-            modal.style.left = '0';
-            modal.style.width = '100%';
-            modal.style.height = '100%';
-            modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
-            modal.style.display = 'flex';
-            modal.style.justifyContent = 'center';
-            modal.style.alignItems = 'center';
-            modal.style.zIndex = '10000';
+            modal.className = 'qf-modal';
             const content = document.createElement('div');
-            content.style.background = 'white';
-            content.style.padding = '20px';
-            content.style.borderRadius = '5px';
-            content.innerHTML = `<p>${data.message}</p><button onclick="this.parentElement.parentElement.remove()">OK</button>`;
+            content.className = 'qf-modal-card';
+            content.innerHTML = `<p>${data.message}</p><button>OK</button>`;
+            content.querySelector('button').onclick = () => modal.remove();
             modal.appendChild(content);
             document.body.appendChild(modal);
         });

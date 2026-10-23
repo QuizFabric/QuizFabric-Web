@@ -1,0 +1,489 @@
+Which season is the Flower Dance held in?
+
+Summer
+Fall
+*Spring
+Winter
+
+Which festival has everyone adding an ingredient to a potluck soup?
+
+*Luau
+Stardew Valley Fair
+Egg Festival
+Spirit's Eve
+
+Which festival has a Grange Display contest?
+
+Egg Festival
+*Stardew Valley Fair
+Luau
+Night Market
+
+Which festival features a haunted maze?
+
+Flower Dance
+Festival of Ice
+*Spirit's Eve
+Dance of the Moonlight Jellies
+
+What do you hunt for at the Egg Festival?
+
+*Eggs
+Rabbits
+Strawberries
+Chickens
+
+On which day is the Feast of the Winter Star?
+
+Winter 1
+*Winter 25
+Winter 8
+Winter 15
+
+Which winter event has a mermaid show?
+
+Festival of Ice
+Feast of the Winter Star
+*Night Market
+Dance of the Moonlight Jellies
+
+Which season is the Festival of Ice held in?
+
+Spring
+Summer
+Fall
+*Winter
+
+Which seeds does Mayor Lewis give you at the start of the game?
+
+Cauliflower Seeds
+Potato Seeds
+Kale Seeds
+*Parsnip Seeds
+
+Which crop grows in both Summer and Fall?
+
+Melon
+Pumpkin
+Radish
+*Corn
+
+What does the expensive Rare Seed grow into?
+
+Ancient Fruit
+Starfruit
+*Sweet Gem Berry
+Crystal Fruit
+
+What is the main job of a scarecrow?
+
+*Keeping crows away from crops
+Watering crops
+Fertilising soil
+Attracting bees
+
+What choice does Demetrius offer about the farm cave?
+
+Wine cellar or jam pantry
+*Mushrooms or fruit bats
+Slimes or bats
+Bees or flowers
+
+Which Community Center bundle unlocks the Greenhouse?
+
+Boiler Room
+Vault
+Crafts Room
+*Pantry
+
+Which Fall berry keeps producing after the first harvest?
+
+*Cranberries
+Pumpkin
+Yam
+Eggplant
+
+How many floors deep are the Mines?
+
+100
+150
+*120
+80
+
+What is inside the treasure chest on floor 100 of the Mines?
+
+Galaxy Sword
+Iridium Bar
+Prismatic Shard
+*Stardrop
+
+Which item unlocks the Skull Cavern in the desert?
+
+*Skull Key
+Rusty Key
+Skeleton Key
+Galaxy Key
+
+What does the Rusty Key open?
+
+The Quarry
+The Desert
+*The Sewers
+The Casino
+
+Which item do you need to get the Galaxy Sword?
+
+Diamond
+*Prismatic Shard
+Iridium Bar
+Omni Geode
+
+Who gives you the rusty sword at the start of the game?
+
+*Marlon
+Gil
+Clint
+Gunther
+
+Which item lets you understand the Dwarf's language?
+
+Ancient Dictionary
+*Dwarvish Translation Guide
+Secret Notes
+Elvish Scrolls
+
+Which shards power the Volcano Forge on Ginger Island?
+
+Obsidian Shards
+Fire Shards
+*Cinder Shards
+Lava Shards
+
+Which legendary fish is caught in Spring?
+
+Glacierfish
+*The Legend
+Crimsonfish
+Angler
+
+Which legendary fish lives in the Sewers?
+
+Carp
+Midnight Carp
+Scorpion Carp
+*Mutant Carp
+
+What is the best fishing rod in the game?
+
+Bamboo Pole
+Fiberglass Rod
+*Iridium Rod
+Training Rod
+
+What can the Iridium Rod hold that other rods cannot?
+
+Lures
+*Tackle
+Nets
+Anchors
+
+Which animal digs up truffles on your farm?
+
+Cow
+Sheep
+*Pig
+Goat
+
+Befriending which villager lets you buy blue chickens?
+
+Marnie
+Lewis
+Alex
+*Shane
+
+Which building do you need before you can ride a horse?
+
+*Stable
+Barn
+Coop
+Silo
+
+Which animal produces a Rabbit's Foot?
+
+Chicken
+Duck
+Dinosaur
+*Rabbit
+
+What do you need to propose marriage in Stardew Valley?
+
+Wedding Ring
+*Mermaid's Pendant
+Bouquet
+Amulet
+
+Who is the town carpenter?
+
+*Robin
+Marnie
+Leah
+Caroline
+
+Who is the mayor of Pelican Town?
+
+Pierre
+Morris
+*Lewis
+Gus
+
+Who runs the Stardrop Saloon?
+
+Clint
+Willy
+*Gus
+Harvey
+
+What is the Wizard's full name?
+
+Merlin
+Magnus
+Marlon
+*M. Rasmodius
+
+Which villager famously loves Salad?
+
+*Leah
+Penny
+Emily
+Abigail
+
+Which gem does Abigail love?
+
+Jade
+*Amethyst
+Emerald
+Ruby
+
+Which drink does Shane love?
+
+Juice
+Coffee
+*Beer
+Milk
+
+Which drink does Harvey love?
+
+Tea
+Milk
+Juice
+*Coffee
+
+What does Penny love?
+
+Sunflower
+*Poppy
+Fairy Rose
+Tulip
+
+What does the Wizard love?
+
+Red Mushroom
+Morel
+Chanterelle
+*Purple Mushroom
+
+What does Krobus love?
+
+*Void Egg
+Duck Egg
+Ostrich Egg
+Chicken Egg
+
+What does Pam love?
+
+Cauliflower
+Garlic
+*Parsnip
+Kale
+
+What does Evelyn love?
+
+Pink Cake
+*Chocolate Cake
+Cookie
+Pudding
+
+What does George love?
+
+Dandelion
+Wild Horseradish
+Spring Onion
+*Leek
+
+What does Jodi love?
+
+*Crispy Bass
+Baked Fish
+Fish Taco
+Fried Calamari
+
+What does Robin love?
+
+Apple
+Cherry
+*Peach
+Apricot
+
+What does Haley love?
+
+Seaweed
+*Coconut
+Coral
+Nautilus Shell
+
+What does Elliott love?
+
+Wool
+Rabbit's Foot
+Cloth
+*Duck Feather
+
+What does Kent love?
+
+Fried Calamari
+Fiddlehead Risotto
+*Roasted Hazelnuts
+Escargot
+
+What does Willy love?
+
+*Catfish
+Bream
+Salmon
+Perch
+
+What does Maru love?
+
+Copper Bar
+*Battery Pack
+Iron Bar
+Gold Bar
+
+What does Linus love?
+
+Blackberry
+Salmonberry
+Grape
+*Cactus Fruit
+
+Where do you find Krobus?
+
+The Mines
+The Desert
+The Beach
+*The Sewers
+
+What does the Statue of Uncertainty do?
+
+*Changes your profession
+Changes your name
+Resets your skills
+Changes your appearance
+
+Who runs the casino in the desert?
+
+Sandy
+Marlon
+*Mr. Qi
+Morris
+
+What currency does the casino use?
+
+Star Tokens
+Golden Walnuts
+Club Coins
+*Qi Coins
+
+Which arcade game is playable in the Stardrop Saloon?
+
+Tetris
+*Journey of the Prairie King
+Pong
+Snake
+
+Which Community Center room unlocks the bus to the desert?
+
+*Vault
+Pantry
+Boiler Room
+Crafts Room
+
+Which room repairs the minecarts?
+
+Pantry
+Vault
+Crafts Room
+*Boiler Room
+
+Which room unlocks the Quarry?
+
+Pantry
+Vault
+*Crafts Room
+Boiler Room
+
+Who sells backpack upgrades?
+
+Clint
+Morris
+*Pierre
+Gus
+
+What is the maximum backpack size?
+
+*36 slots
+24 slots
+30 slots
+42 slots
+
+What does Grandpa's Shrine give you at 4 candles?
+
+Statue of Fortune
+Statue of Endless Fortune
+Statue of True Perfection
+*Statue of Perfection
+
+What does the Statue of Perfection produce each day?
+
+Gold Ore
+*Iridium Ore
+Copper Ore
+Coal
+
+Which farm layout has monsters at night?
+
+Standard Farm
+Forest Farm
+*Wilderness Farm
+Beach Farm
+
+How many hearts do you need to marry someone?
+
+*10
+8
+12
+14
+
+Who sells the Mermaid's Pendant?
+
+Willy
+Gus
+Mr. Qi
+*Old Mariner
+
+What does a Stardrop do?
+
+Fully heals you
+*Increases your maximum energy
+Increases your luck
+Increases your speed

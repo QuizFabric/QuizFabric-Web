@@ -57,11 +57,12 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: white;
+      background: rgba(46, 16, 70, 0.85);
+      color: #fff;
       text-align: center;
       height: 3rem;
       font-weight: 600;
-      border-top: 3px solid var(--primary-color);
+      border-top: 3px solid #3AD6A0;
     }
     .loading-bar {
       height: 100%;
@@ -483,6 +484,58 @@
           {% endfor %}
           <button type="submit" class="btn btn-primary" id="submitAnswerButton" style="margin-top: 1rem;">Submit Answer</button>
         </form>
+      {% elif question.type == 'slider' %}
+        <form id="answer-form" action="{{ url_for('submit_answer', quiz_name=quiz_name) }}" method="post" onsubmit="attachTime(event)">
+          <input type="hidden" id="timeElapsed" name="time_elapsed" value="0">
+          <div class="form-group">
+            <label for="slider-input">Your answer ({{ question.min }} – {{ question.max }}):</label>
+            <input type="range" id="slider-input" name="answer" min="{{ question.min }}" max="{{ question.max }}" step="any"
+                   value="{{ (question.min + question.max) / 2 }}"
+                   oninput="document.getElementById('slider-value').textContent = this.value;"
+                   style="width: 100%;">
+            <div style="text-align:center; font-size: 1.4rem; font-weight: bold;"><span id="slider-value">{{ (question.min + question.max) / 2 }}</span></div>
+          </div>
+          <button type="submit" class="btn btn-primary" id="submitAnswerButton">Submit Answer</button>
+        </form>
+      {% elif question.type == 'puzzle' %}
+        <form id="answer-form" action="{{ url_for('submit_answer', quiz_name=quiz_name) }}" method="post" onsubmit="attachTime(event)">
+          <input type="hidden" id="timeElapsed" name="time_elapsed" value="0">
+          <input type="hidden" id="puzzle-order" name="answer">
+          <p style="margin-bottom: 0.5rem;">Put the answers in the correct order:</p>
+          <div id="puzzle-list" class="puzzle-list"></div>
+          <button type="submit" class="btn btn-primary" id="submitAnswerButton">Submit Answer</button>
+        </form>
+        <style>
+          .puzzle-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.6rem 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: var(--border-radius, 8px);
+            color: #fff;
+            font-weight: 600;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+          }
+          .puzzle-item:nth-child(8n+1) { background: linear-gradient(180deg, #FF4F81, #c22a55); }
+          .puzzle-item:nth-child(8n+2) { background: linear-gradient(180deg, #7C4DFF, #5a2fd1); }
+          .puzzle-item:nth-child(8n+3) { background: linear-gradient(180deg, #FF9F45, #c96f22); }
+          .puzzle-item:nth-child(8n+4) { background: linear-gradient(180deg, #38E0C8, #1fa896); }
+          .puzzle-item:nth-child(8n+5) { background: linear-gradient(180deg, #FF6EC7, #c23f8e); }
+          .puzzle-item:nth-child(8n+6) { background: linear-gradient(180deg, #6884FF, #3f5cd1); }
+          .puzzle-item:nth-child(8n+7) { background: linear-gradient(180deg, #C474FF, #8f3fd1); }
+          .puzzle-item:nth-child(8n)   { background: linear-gradient(180deg, #5AD68C, #2fa05e); }
+          .puzzle-controls { display: flex; gap: 0.35rem; }
+          .puzzle-controls button {
+            padding: 0.25rem 0.6rem;
+            background: rgba(0,0,0,0.35);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+          }
+          .puzzle-controls button:disabled { opacity: 0.4; }
+        </style>
       {% else %}
         <form id="answer-form" action="{{ url_for('submit_answer', quiz_name=quiz_name) }}" method="post" onsubmit="attachTime(event)">
           <input type="hidden" id="timeElapsed" name="time_elapsed" value="0">
@@ -529,6 +582,62 @@
       content.innerHTML = `<p>${data.message}</p><button onclick="this.parentElement.parentElement.remove()">OK</button>`;
       modal.appendChild(content);
       document.body.appendChild(modal);
+    });
+  </script>
+  <script>
+    // Puzzle question: shuffle the starting order and let the player reorder with ▲/▼
+    document.addEventListener('DOMContentLoaded', function() {
+      const puzzleList = document.getElementById('puzzle-list');
+      if (!puzzleList) return;
+      const items = {{ question.answers | tojson }};
+      for (let i = items.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [items[i], items[j]] = [items[j], items[i]];
+      }
+      const orderInput = document.getElementById('puzzle-order');
+
+      function render() {
+        puzzleList.innerHTML = '';
+        items.forEach(function(item, idx) {
+          const row = document.createElement('div');
+          row.className = 'puzzle-item';
+          const label = document.createElement('span');
+          label.textContent = item;
+          const controls = document.createElement('span');
+          controls.className = 'puzzle-controls';
+          const up = document.createElement('button');
+          up.type = 'button';
+          up.className = 'btn btn-secondary';
+          up.textContent = '▲';
+          up.dataset.idx = idx;
+          up.dataset.dir = -1;
+          up.disabled = idx === 0;
+          const down = document.createElement('button');
+          down.type = 'button';
+          down.className = 'btn btn-secondary';
+          down.textContent = '▼';
+          down.dataset.idx = idx;
+          down.dataset.dir = 1;
+          down.disabled = idx === items.length - 1;
+          controls.appendChild(up);
+          controls.appendChild(down);
+          row.appendChild(label);
+          row.appendChild(controls);
+          puzzleList.appendChild(row);
+        });
+        orderInput.value = JSON.stringify(items);
+      }
+
+      puzzleList.addEventListener('click', function(e) {
+        const btn = e.target.closest('button[data-idx]');
+        if (!btn || btn.disabled) return;
+        const idx = parseInt(btn.dataset.idx, 10);
+        const dir = parseInt(btn.dataset.dir, 10);
+        [items[idx], items[idx + dir]] = [items[idx + dir], items[idx]];
+        render();
+      });
+
+      render();
     });
   </script>
 </body>

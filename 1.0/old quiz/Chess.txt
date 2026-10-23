@@ -1,0 +1,65 @@
+In chess ATTACKING THE KING is called -------------.
+
+King Attack
+*Check
+Attack
+All the above
+
+In chess, we can capture the king
+
+True
+*False
+
+What is the value of a Bishop?
+
+*3 Points
+4 points
+5 points
+6 points
+
+How can the KING get out of CHECK?
+
+Cut
+Cover
+Move
+*All the above
+
+If the KING cannot escape from check by cut, cover or move. Then it is called __________
+
+Attack
+*Checkmate
+Draw
+Trouble
+
+The special move in which king can go two steps is called _______
+
+Checkmate
+check
+*Castling
+Attack
+
+The value of the queen in Chess is ___
+
+7 Points
+8 points
+10 Points
+*9 Points
+
+In how many places a rook can give check to king?
+
+*2 places
+3 places
+In many places
+None of the above
+
+On an empty board, if a Knight is in the centre, how many squares can it go?
+
+2 squares
+4 squares
+*8 squares
+6 squares
+
+When king is in check we have to attend to check?
+
+*True
+False

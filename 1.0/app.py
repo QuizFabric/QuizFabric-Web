@@ -2,6 +2,7 @@ import os
 import json
 import random
 import datetime
+import html
 import re
 import sys
 import threading
@@ -9,6 +10,10 @@ import logging
 import time
 import queue
 import multiprocessing
+import io
+import shutil
+import urllib.parse
+import urllib.request
 
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for, send_file
 
@@ -21,7 +26,7 @@ try:
 except ImportError:
     GUI_AVAILABLE = False
 
-from non_static.quiz import read_quiz, get_random_question, validate_answer  # adjust imports as needed
+from non_static.quiz import read_quiz, get_random_question, validate_answer, correct_answer_text, question_payload  # adjust imports as needed
 
 from non_static.utils import read_uploaded_json, write_uploaded_json
 
@@ -37,25 +42,35 @@ app.secret_key = "your_random_secret_key_here"
 
 socketio = SocketIO(app, async_mode='gevent')
 
-# Globals for IP monitoring - will be set by main process
-active_clients = None
-ip_to_sid = None
-actions_queue = None
+# Globals for IP monitoring. Initialised here so every entry point works
+# the same: dev (python app.py), production (wsgi.py) and gunicorn workers.
+active_clients = {}
+ip_to_sid = {}
+actions_queue = queue.Queue()
 
 # Globals for IP monitoring
 
 from werkzeug.utils import secure_filename
 
 # Configuration for file uploads
-ALLOWED_EXTENSIONS = {'.png', '.webp', '.jpg', '.jpeg'}
-MAX_IMAGES_PER_QUIZ = 20
+ALLOWED_EXTENSIONS = {'.png', '.webp', '.jpg', '.jpeg', '.gif'}
+MAX_IMAGES_PER_QUIZ = 100
 from werkzeug.utils import secure_filename
 
 # Configuration for file uploads
-ALLOWED_EXTENSIONS = {'.png', '.webp', '.jpg', '.jpeg'}
+ALLOWED_EXTENSIONS = {'.png', '.webp', '.jpg', '.jpeg', '.gif'}
 MAX_FILE_SIZE = 300 * 1024 * 1024  # 300MB
-MAX_IMAGES_PER_QUIZ = 20
+MAX_IMAGES_PER_QUIZ = 100
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "UploadedImages")
+
+# Maps HTTP Content-Type values to file extensions for URL-based image uploads
+CONTENT_TYPE_EXTENSIONS = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'image/apng': '.png',  # animated PNG: saved as .png, converted as APNG
+}
 
 # Create uploads folder if it doesn't exist
 if not os.path.exists(UPLOAD_FOLDER):
@@ -152,7 +167,15 @@ def before_request():
 
 def log_connection():
     ip = get_client_ip()
-    # Optional: Add connection logging here
+    # Log every request to the console (the Pi's HDMI screen via tty1),
+    # except home-page hits (they poll constantly), cover fetches and
+    # uploaded images (the CVR/IMG lines in those routes are the nicer
+    # replacements).
+    if (request.path == '/' or request.path == '/api/kahootcover'
+            or request.path.startswith('/UploadedImages/')):
+        return
+    query = ('?' + request.query_string.decode('utf-8', 'replace')) if request.query_string else ''
+    logger.info(f"REQ {ip} {request.method} {request.path}{query}")
 
 def track_page():
     if active_clients is None:
@@ -311,7 +334,8 @@ def gui_action():
 @app.route('/')
 def home():
     client_ip = get_client_ip()
-    logger.info(f"{client_ip} accessed home page")
+    # Home-page visits aren't logged (they poll constantly and would drown
+    # the console; see log_connection).
     try:
         quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
         quizzes = []
@@ -327,7 +351,9 @@ def home():
         if os.path.exists(uploaded_file):
             with open(uploaded_file, "r", encoding="utf-8") as f:
                 uploaded_data = json.load(f)
-            user_uploaded = uploaded_data.get(ip, [])
+            # Store names without the .txt extension so they match 'quizzes'
+            user_uploaded = [os.path.splitext(u)[0] if u.endswith('.txt') else u
+                             for u in uploaded_data.get(ip, [])]
         # Special case: 127.0.0.1 has full access to all quizzes
         if ip == "127.0.0.1":
             user_uploaded = quizzes
@@ -342,7 +368,9 @@ def home():
         # Sort quizzes by plays descending
         quizzes_sorted = sorted(quizzes, key=lambda x: plays.get(x, 0), reverse=True)
         
-        return render_template('home.html', quizzes=quizzes_sorted, user_uploaded=user_uploaded, plays=plays), 200
+        banners = {q: banner_image_path(q) for q in quizzes_sorted}
+        return render_template('home.html', quizzes=quizzes_sorted, user_uploaded=user_uploaded,
+                               plays=plays, banners=banners), 200
     except Exception as e:
         logger.error(f"Error in home route: {str(e)}")
         return f"Error in home route: {str(e)}", 500
@@ -398,11 +426,14 @@ def get_avatar_image(avatar_name):
 
 @app.route('/data/icon.png')
 def get_icon():
-    icon_file = os.path.join(os.path.dirname(__file__), "data", "icon.png")
-    if os.path.exists(icon_file):
-        return send_file(icon_file, mimetype='image/png')
-    else:
-        return "Icon not found", 404
+    # The file may be icon.png or icon.PNG depending on where it was
+    # uploaded from - check both (Linux filesystems are case-sensitive).
+    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    for name in ("icon.png", "icon.PNG"):
+        icon_file = os.path.join(data_dir, name)
+        if os.path.exists(icon_file):
+            return send_file(icon_file, mimetype='image/png')
+    return "Icon not found", 404
 
 @app.route('/deletequiz', methods=['GET', 'POST'])
 def deletequiz():
@@ -418,6 +449,9 @@ def deletequiz():
 
     # POST: actually delete the quiz.
     quiz_to_delete = request.form.get("quiz")
+    if not quiz_to_delete:
+        return redirect(url_for("home"))
+
     uploaded_file = os.path.join(os.path.dirname(__file__), "data", "uploaded.json")
     if os.path.exists(uploaded_file):
         with open(uploaded_file, "r", encoding="utf-8") as f:
@@ -426,17 +460,35 @@ def deletequiz():
         uploaded_data = {}
     user_uploaded = uploaded_data.get(ip, [])
 
-    # Check if the quiz exists in the uploaded quizzes for this IP.
-    if quiz_to_delete in user_uploaded:
+    # The name can arrive with or without the .txt extension; match both ways
+    base_name = quiz_to_delete[:-4] if quiz_to_delete.endswith('.txt') else quiz_to_delete
+    matched = (quiz_to_delete in user_uploaded) or ((base_name + '.txt') in user_uploaded)
+    # Localhost has full access to every quiz (same as the home page)
+    if ip == "127.0.0.1":
+        matched = True
+
+    if matched:
         logger.info(f"User {ip} deleting quiz: {quiz_to_delete}")
         quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
-        quiz_file = os.path.join(quiz_dir, quiz_to_delete + ".txt")
+        quiz_file = os.path.join(quiz_dir, base_name + ".txt")
         if os.path.exists(quiz_file):
             os.remove(quiz_file)
-        user_uploaded.remove(quiz_to_delete)
+        # Remove any spelling of the name from uploaded.json
+        user_uploaded = [q for q in user_uploaded
+                         if q != quiz_to_delete and q != base_name and q != base_name + '.txt']
         uploaded_data[ip] = user_uploaded
         with open(uploaded_file, "w", encoding="utf-8") as f:
             json.dump(uploaded_data, f)
+        # Best-effort cleanup of the quiz's images
+        try:
+            images_dir = os.path.join(UPLOAD_FOLDER, secure_filename(base_name))
+            if os.path.isdir(images_dir):
+                shutil.rmtree(images_dir, ignore_errors=True)
+            meta_file = os.path.join(os.path.dirname(__file__), "non_static", "question", f"{base_name}_images.json")
+            if os.path.exists(meta_file):
+                os.remove(meta_file)
+        except Exception as e:
+            logger.warning(f"Could not fully clean up quiz files for {ip}: {e}")
 
     # Redirect to home page after deletion.
     return redirect(url_for("home"))
@@ -450,6 +502,9 @@ def addquiz():
         uploaded_file = request.files.get("quiz_file")
         if uploaded_file:
             content = uploaded_file.read().decode("utf-8")
+            # Normalize line endings so Windows text-mode writing doesn't
+            # double CRLF uploads into '\r\r\n' on disk.
+            content = content.replace('\r\n', '\n').replace('\r', '\n')
             # Validate and save the file
             quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
             if not os.path.exists(quiz_dir):
@@ -472,9 +527,787 @@ def addquiz():
             if quiz_name not in plays:
                 plays[quiz_name] = 0
                 save_plays(plays)
-            
+
+            # Optional banner image shown next to the quiz in the lists.
+            banner_file = request.files.get("banner")
+            if banner_file and banner_file.filename:
+                banner_ext = os.path.splitext(secure_filename(banner_file.filename))[1].lower()
+                if banner_ext in ALLOWED_EXTENSIONS:
+                    quiz_image_dir = os.path.join(UPLOAD_FOLDER, secure_filename(quiz_name))
+                    if not os.path.exists(quiz_image_dir):
+                        os.makedirs(quiz_image_dir)
+                    with open(os.path.join(quiz_image_dir, f'banner{banner_ext}'), 'wb') as bf:
+                        shutil.copyfileobj(banner_file, bf)
+
             return render_template("addquiz.html", message="Quiz uploaded successfully!")
     return render_template("addquiz.html")
+
+def clean_kahoot_text(text):
+    """Strip HTML tags and unescape entities from Kahoot question text."""
+    text = str(text)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = html.unescape(text)
+    return text.strip().replace('\n', ' ')
+
+def _kahoot_abs_url(u):
+    """Normalises a Kahoot-relative cover path to an absolute URL."""
+    u = (u or '').strip()
+    if not u:
+        return ''
+    if not urllib.parse.urlparse(u).netloc:
+        u = 'https://media.kahoot.it' + (u if u.startswith('/') else '/' + u)
+    return u
+
+def _kahoot_cover_url(data):
+    """Best-effort cover image URL from Kahoot card/search JSON. The cover
+    is normally a plain media.kahoot.it URL string, but older payloads nest
+    it as a dict with a 'url' member."""
+    if not isinstance(data, dict):
+        return ''
+    cover = data.get('cover')
+    if not isinstance(cover, (dict, str)):
+        card = data.get('card')
+        cover = card.get('cover') if isinstance(card, dict) else None
+    if isinstance(cover, str):
+        return _kahoot_abs_url(cover)
+    if isinstance(cover, dict):
+        return _kahoot_abs_url(str(cover.get('url') or ''))
+    return ''
+
+def fetch_kahoot_quiz(uuid):
+    """Fetch a public Kahoot quiz by UUID and return its raw JSON.
+
+    Uses the same unauthenticated REST API that browser scrapers rely on.
+    Only works for public quizzes; Kahoot may change this at any time.
+    """
+    urls = [
+        f"https://create.kahoot.it/rest/kahoots/{uuid}/card/?includeKahoot=true",
+        f"https://create.kahoot.it/rest/kahoots/{uuid}",
+    ]
+    last_error = None
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'QuizFabric/1.0'})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read().decode('utf-8'))
+        except Exception as e:
+            last_error = e
+    raise RuntimeError(f"Could not fetch Kahoot quiz: {last_error}")
+
+def _find_uuid(obj, depth=0):
+    """Recursively find the first GUID-looking 'uuid' value in a nested dict/list."""
+    if depth > 6 or obj is None:
+        return None
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == 'uuid' and isinstance(v, str) and re.match(r'^[0-9a-fA-F-]{10,}$', v):
+                return v
+        for v in obj.values():
+            found = _find_uuid(v, depth + 1)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for item in obj:
+            found = _find_uuid(item, depth + 1)
+            if found:
+                return found
+    return None
+
+def search_kahoot_many(query, cursor=0, limit=20):
+    """Search Kahoot for public quizzes. Returns ([(uuid, title, cover), ...],
+    next_cursor). The unauthenticated discover REST API pages by offset."""
+    params = urllib.parse.urlencode({
+        'query': query,
+        'limit': limit,
+        'cursor': cursor,
+        'searchCluster': 1,
+        'includeExtendedCounters': 'false',
+        'inventoryItemId': 'ANY',
+    })
+    url = f"https://create.kahoot.it/rest/kahoots/?{params}"
+    req = urllib.request.Request(url, headers={'User-Agent': 'QuizFabric/1.0'})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode('utf-8'))
+    results = []
+    for entity in (data.get('entities') or []):
+        card = entity.get('card') or {}
+        uuid = card.get('uuid') or _find_uuid(entity)
+        title = card.get('title') or 'Kahoot quiz'
+        cover = card.get('cover')
+        if isinstance(cover, str):
+            cover_url = _kahoot_abs_url(cover)
+        elif isinstance(cover, dict):
+            cover_url = _kahoot_abs_url(str(cover.get('url') or ''))
+        else:
+            cover_url = ''
+        if uuid:
+            results.append((uuid, str(title), cover_url))
+    return results, cursor + len(results)
+
+def search_kahoot(query):
+    """Search Kahoot for public quizzes and return the UUID of the first result.
+
+    Uses the unauthenticated discover REST API; returns None when the
+    search yields nothing usable.
+    """
+    results, _ = search_kahoot_many(query, 0, 1)
+    return results[0][0] if results else None
+
+def fetch_blooket_game(game_id):
+    """Fetch a public Blooket game by ID and return its raw JSON."""
+    urls = [
+        f"https://api.blooket.com/api/games?gameId={game_id}",
+        f"https://play.blooket.com/api/gamequestionsets?gameId={game_id}",
+    ]
+    last_error = None
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'QuizFabric/1.0'})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read().decode('utf-8'))
+        except Exception as e:
+            last_error = e
+    raise RuntimeError(f"Could not fetch Blooket game: {last_error}")
+
+def blooket_to_quizfabric(data):
+    """Convert Blooket game JSON into QuizFabric .txt content.
+
+    Multiple-choice ('mc', 't/f') questions become multiple choice,
+    typing ('typing', 'input') questions become type-answer. Unsupported
+    question types are skipped.
+    Returns (title, content, kept_count, question_images) where
+    question_images is a list of (final_question_index, image_url).
+    """
+    game = data.get('game', data)
+    title = clean_kahoot_text(game.get('title') or 'Untitled Blooket') or 'Untitled Blooket'
+    questions = game.get('questions') or []
+
+    blocks = []
+    question_images = []
+    kept = 0
+    for q in questions:
+        q_type = str(q.get('questionType') or '').lower()
+        question = clean_kahoot_text(q.get('question') or '')
+        if not question:
+            continue
+        answers = [clean_kahoot_text(a or '') for a in (q.get('answers') or [])]
+        answers = [a for a in answers if a]
+        correct = [clean_kahoot_text(a or '') for a in (q.get('correctAnswers') or [])]
+        correct = [a for a in correct if a]
+        lines = []
+        if q_type in ('typing', 'input'):
+            # Type-answer question: keep a single correct answer
+            answer = correct[0] if correct else (answers[0] if answers else '')
+            if not answer:
+                continue
+            lines = ['*' + answer]
+        elif answers:
+            # Multiple choice / true-false: mark the correct answers with '*'
+            for a in answers:
+                lines.append('*' + a if a in correct else a)
+        else:
+            continue
+        # read_quiz expects a question block, then the answers as the next block
+        blocks.append(question + '\n\n' + '\n'.join(lines))
+        img = q.get('questionImage')
+        if isinstance(img, str) and img.strip():
+            question_images.append((kept, img.strip()))
+        kept += 1
+
+    return title, '\n\n'.join(blocks), kept, question_images
+
+def _steal_blooket(quiz_input):
+    """Fetches and converts a Blooket game. Returns
+    (title, content, kept, question_images). Raises ValueError with a
+    user-facing message.
+
+    Blooket has no anonymous search (its discover page redirects to the
+    login page), so only a game ID or link can be used."""
+    # Accept links like https://dashboard.blooket.com/set/<id>,
+    # https://www.blooket.com/play?id=<id>, or just the game ID.
+    m = re.search(r'([0-9a-fA-F]{20,})', quiz_input)
+    game_id = m.group(1) if m else ''
+    if not game_id:
+        raise ValueError("That doesn't look like a Blooket game ID or link.")
+    try:
+        data = fetch_blooket_game(game_id)
+        title, content, kept, question_images = blooket_to_quizfabric(data)
+    except Exception as e:
+        raise ValueError(f"Could not fetch that Blooket game: {e}")
+    if kept == 0:
+        raise ValueError("That Blooket game has no supported questions (multiple choice or type answer), so there is nothing to import.")
+    return title, content, kept, question_images
+
+def _num(d, *keys):
+    """Return the first numeric value found under any of the given keys."""
+    for k in keys:
+        v = d.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return float(v)
+    return None
+
+def _fmt_num(x):
+    """Format a float without a trailing .0 when it is a whole number."""
+    return str(int(x)) if x == int(x) else str(x)
+
+def kahoot_to_quizfabric(data):
+    """Convert Kahoot quiz JSON into QuizFabric .txt content.
+
+    Supported question types: multiple choice ('quiz'), type answer
+    ('open_ended'), puzzle ('jumble') and slider ('slider'). Other types
+    (survey, content, ...) are skipped because QuizFabric cannot
+    represent them.
+    Returns (title, content, kept_count, question_images) where
+    question_images is a list of (final_question_index, image_url).
+    """
+    # With the /card/?includeKahoot=true endpoint the quiz lives under 'kahoot'
+    kahoot = data.get('kahoot', data)
+    title = clean_kahoot_text(kahoot.get('title') or 'Untitled Kahoot') or 'Untitled Kahoot'
+    questions = kahoot.get('questions') or []
+
+    blocks = []
+    question_images = []
+    kept = 0
+    for q in questions:
+        q_type = q.get('type')
+        if q_type not in ('quiz', 'open_ended', 'jumble', 'slider'):
+            continue  # QuizFabric doesn't support this question type
+        question = clean_kahoot_text(q.get('question') or '')
+        if not question:
+            continue
+        choices = q.get('choices') or []
+        lines = []
+        if q_type == 'slider':
+            # Kahoot slider: start/end/correct (and optional tolerance),
+            # possibly nested in a range object depending on the API version.
+            q_min = _num(q, 'start', 'min')
+            q_max = _num(q, 'end', 'max')
+            q_correct = _num(q, 'correct', 'correctAnswer', 'answer')
+            q_tolerance = _num(q, 'tolerance')
+            range_obj = q.get('range') or q.get('choiceRange') or {}
+            if isinstance(range_obj, dict):
+                if q_min is None: q_min = _num(range_obj, 'start', 'min')
+                if q_max is None: q_max = _num(range_obj, 'end', 'max')
+                if q_correct is None: q_correct = _num(range_obj, 'correct', 'answer')
+                if q_tolerance is None: q_tolerance = _num(range_obj, 'tolerance')
+            if q_correct is None:
+                for c in choices:
+                    if c.get('correct'):
+                        try:
+                            q_correct = float(c.get('answer'))
+                        except (TypeError, ValueError):
+                            pass
+                        break
+            if q_min is None or q_max is None or q_correct is None:
+                continue
+            lines = [_fmt_num(q_min), _fmt_num(q_max), '*' + _fmt_num(q_correct)]
+            if q_tolerance:
+                lines.append('~' + _fmt_num(q_tolerance))
+            question = '[SLIDER]' + question
+        elif q_type == 'jumble':
+            # The order in the Kahoot choices array IS the correct order
+            for c in choices:
+                answer = clean_kahoot_text(c.get('answer') or '')
+                if not answer:
+                    continue
+                lines.append(answer)
+            if len(lines) < 2:
+                continue
+            question = '[PUZZLE]' + question
+        elif q_type == 'open_ended':
+            # Type-answer question: keep a single correct answer
+            correct = [c.get('answer') for c in choices if c.get('correct')]
+            answer = clean_kahoot_text(correct[0] if correct else (choices[0].get('answer') if choices else ''))
+            if not answer:
+                continue
+            lines = ['*' + answer]
+        else:
+            # Multiple choice: mark the correct answers with '*'
+            for c in choices:
+                answer = clean_kahoot_text(c.get('answer') or '')
+                if not answer:
+                    continue
+                lines.append('*' + answer if c.get('correct') else answer)
+            if not lines:
+                continue
+        # read_quiz expects a question block, then the answers as the next block
+        blocks.append(question + '\n\n' + '\n'.join(lines))
+        img = q.get('image')
+        if isinstance(img, str) and img.strip():
+            question_images.append((kept, img.strip()))
+        kept += 1
+
+    return title, '\n\n'.join(blocks), kept, question_images
+
+def _steal_kahoot(quiz_input, search_query):
+    """Fetches and converts a Kahoot quiz. Returns
+    (title, content, kept, question_images). Raises ValueError with a
+    user-facing message."""
+    if search_query:
+        logger.info(f"SRH {get_client_ip()} is searching \"{search_query}\"")
+        try:
+            uuid = search_kahoot(search_query)
+        except Exception as e:
+            raise ValueError(f"Could not search Kahoot: {e}")
+        if not uuid:
+            raise ValueError(f'No public Kahoot quizzes found for "{search_query}".')
+    else:
+        # Accept full links like https://create.kahoot.it/details/<slug>/<uuid>
+        # or just the UUID; anything else is treated as a search term.
+        uuid = quiz_input.rstrip('/').split('/')[-1].split('?')[0]
+        if not re.match(r'^[0-9a-fA-F-]{10,}$', uuid):
+            logger.info(f"SRH {get_client_ip()} is searching \"{quiz_input}\"")
+            try:
+                uuid = search_kahoot(quiz_input)
+            except Exception as e:
+                raise ValueError(f"Could not search Kahoot: {e}")
+            if not uuid:
+                raise ValueError(f'No public Kahoot quizzes found for "{quiz_input}".')
+    try:
+        data = fetch_kahoot_quiz(uuid)
+        title, content, kept, question_images = kahoot_to_quizfabric(data)
+        cover_url = _kahoot_cover_url(data)
+    except Exception as e:
+        raise ValueError(f"Could not fetch that Kahoot quiz: {e}")
+    if kept == 0:
+        raise ValueError("That Kahoot quiz has no multiple-choice or type-answer questions, so there is nothing to import.")
+    return title, content, kept, question_images, cover_url
+
+def _save_stolen_quiz(client_ip, title, content, question_images, source='Kahoot', cover_url=''):
+    """Saves a stolen quiz like an upload and steals question images plus the
+    cover banner (best-effort). Returns the quiz name."""
+    filename = secure_filename(title)[:80] or f'{source.lower()}-quiz'
+    filename = filename + '.txt'
+    quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
+    if not os.path.exists(quiz_dir):
+        os.makedirs(quiz_dir)
+    with open(os.path.join(quiz_dir, filename), "w", encoding="utf-8") as f:
+        f.write(content)
+
+    # Register in uploaded.json so the user can edit/delete it like their own
+    uploaded_data = read_uploaded_json()
+    if client_ip not in uploaded_data:
+        uploaded_data[client_ip] = []
+    if filename not in uploaded_data[client_ip]:
+        uploaded_data[client_ip].append(filename)
+    write_uploaded_json(uploaded_data)
+
+    quiz_name = os.path.splitext(filename)[0]
+    plays = load_plays()
+    if quiz_name not in plays:
+        plays[quiz_name] = 0
+        save_plays(plays)
+
+    images_stolen = 0
+    for q_index, img_url in question_images:
+        try:
+            image_data, file_ext = download_image_from_url(img_url)
+            basename = urllib.parse.unquote(os.path.basename(urllib.parse.urlparse(img_url).path)) or f'kahoot-q{q_index + 1}{file_ext}'
+            stem, _ = os.path.splitext(basename)
+            _store_quiz_image(quiz_name, image_data, f'{stem}{file_ext}', q_index, client_ip)
+            images_stolen += 1
+        except Exception as e:
+            logger.warning(f"Could not steal question image for '{title}' Q{q_index + 1}: {e}")
+
+    if cover_url:
+        try:
+            cover_data, cover_ext = download_image_from_url(cover_url)
+            quiz_image_dir = os.path.join(UPLOAD_FOLDER, secure_filename(quiz_name))
+            if not os.path.exists(quiz_image_dir):
+                os.makedirs(quiz_image_dir)
+            with open(os.path.join(quiz_image_dir, f'banner{cover_ext}'), 'wb') as bf:
+                shutil.copyfileobj(cover_data, bf)
+        except Exception as e:
+            logger.warning(f"Could not steal quiz banner for '{title}': {e}")
+
+    logger.info(f"{client_ip} stole {source} quiz '{title}' ({images_stolen} images) as '{filename}'")
+    return quiz_name
+
+# Production download cap: 1 quiz per 10 minutes and 10 per day, per IP.
+# Only active when FLASK_ENV == production (wsgi.py loads .env.production
+# before importing this module); the dev server stays unlimited.
+STEAL_RATE_LIMIT = (os.environ.get('FLASK_ENV', '') or '').lower() == 'production'
+STEAL_LIMITS_FILE = os.path.join(os.path.dirname(__file__), "data", "steal_limits.json")
+
+def _steal_limit_ok(ip):
+    if not STEAL_RATE_LIMIT:
+        return True, ''
+    now = time.time()
+    try:
+        with open(STEAL_LIMITS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+    times = [t for t in data.get(ip, []) if now - t < 86400]
+    if any(now - t < 600 for t in times):
+        return False, 'Only 1 quiz download every 10 minutes'
+    if len(times) >= 10:
+        return False, 'Only 10 quiz downloads per day'
+    return True, ''
+
+def _steal_limit_record(ip):
+    if not STEAL_RATE_LIMIT:
+        return
+    now = time.time()
+    try:
+        with open(STEAL_LIMITS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+    times = [t for t in data.get(ip, []) if now - t < 86400]
+    times.append(now)
+    data[ip] = times
+    try:
+        with open(STEAL_LIMITS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.warning(f"Could not save download limits: {e}")
+
+@app.route('/stealquiz', methods=['GET', 'POST'])
+def stealquiz():
+    """Fetch a Kahoot quiz by ID/URL and convert it to QuizFabric format."""
+    client_ip = get_client_ip()
+    if request.method == 'GET':
+        return render_template("stealquiz.html")
+
+    quiz_input = (request.form.get('quiz_id') or '').strip()
+    search_query = (request.form.get('search') or '').strip()
+    if not quiz_input and not search_query:
+        return render_template("stealquiz.html", error="Please enter a Kahoot quiz ID, link, or search term.")
+    ok, limit_msg = _steal_limit_ok(client_ip)
+    if not ok:
+        return render_template("stealquiz.html", error=limit_msg)
+
+    try:
+        title, content, kept, question_images, cover_url = _steal_kahoot(quiz_input, search_query)
+    except ValueError as e:
+        return render_template("stealquiz.html", error=str(e))
+
+    quiz_name = _save_stolen_quiz(client_ip, title, content, question_images, cover_url=cover_url)
+    _steal_limit_record(client_ip)
+    return redirect(url_for('edit_quiz', quiz_name=quiz_name))
+
+@app.route('/stealblooket', methods=['GET', 'POST'])
+def stealblooket():
+    """Fetch a Blooket game by ID/URL and convert it to QuizFabric format."""
+    client_ip = get_client_ip()
+    if request.method == 'GET':
+        return render_template("stealblooket.html")
+
+    quiz_input = (request.form.get('quiz_id') or '').strip()
+    if not quiz_input:
+        return render_template("stealblooket.html", error="Please enter a Blooket game ID or link.")
+    ok, limit_msg = _steal_limit_ok(client_ip)
+    if not ok:
+        return render_template("stealblooket.html", error=limit_msg)
+
+    try:
+        title, content, kept, question_images = _steal_blooket(quiz_input)
+    except ValueError as e:
+        return render_template("stealblooket.html", error=str(e))
+
+    quiz_name = _save_stolen_quiz(client_ip, title, content, question_images, source='Blooket')
+    _steal_limit_record(client_ip)
+    return redirect(url_for('edit_quiz', quiz_name=quiz_name))
+
+@app.route('/api/searchkahoot', methods=['POST'])
+def api_searchkahoot():
+    """Paged Kahoot search for the 3DS steal flow."""
+    q = (request.form.get('q') or '').strip()
+    try:
+        cursor = int(request.form.get('cursor', '0'))
+        count = int(request.form.get('count', '20'))
+    except ValueError:
+        cursor, count = 0, 20
+    if not q:
+        return jsonify({'error': 'No search term'}), 400
+    logger.info(f"SRH {get_client_ip()} is searching \"{q}\"")
+    count = max(1, min(count, 50))
+    try:
+        results, next_cursor = search_kahoot_many(q, cursor, count)
+    except Exception as e:
+        return jsonify({'error': f'Could not search Kahoot: {e}'}), 502
+    return jsonify({'results': [{'uuid': u, 'title': t, 'cover': c}
+                                for u, t, c in results],
+                    'next_cursor': next_cursor})
+
+@app.route('/api/myquizzes', methods=['GET'])
+def api_myquizzes():
+    """Quizzes this IP owns (uploads/steals) - for the 3DS delete page."""
+    ip = get_client_ip()
+    quizzes = read_uploaded_json().get(ip, [])
+    names = sorted(os.path.splitext(q)[0] for q in quizzes)
+    return jsonify({'quizzes': names})
+
+@app.route('/api/stealquiz', methods=['POST'])
+def api_stealquiz():
+    """JSON Kahoot stealer for the 3DS: one field accepting an ID, link, or
+    search term. Returns the saved quiz name."""
+    client_ip = get_client_ip()
+    value = (request.form.get('input') or '').strip()
+    if not value:
+        return jsonify({'error': 'Enter a search query'}), 400
+    ok, limit_msg = _steal_limit_ok(client_ip)
+    if not ok:
+        return jsonify({'error': limit_msg}), 429
+    try:
+        title, content, kept, question_images, cover_url = _steal_kahoot(value, '')
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    quiz_name = _save_stolen_quiz(client_ip, title, content, question_images, cover_url=cover_url)
+    _steal_limit_record(client_ip)
+    return jsonify({'quiz_name': quiz_name})
+
+@app.route('/api/stealblooket', methods=['POST'])
+def api_stealblooket():
+    """JSON Blooket stealer for the 3DS: one field accepting a game ID or
+    link. Returns the saved quiz name."""
+    client_ip = get_client_ip()
+    value = (request.form.get('input') or '').strip()
+    if not value:
+        return jsonify({'error': 'Enter a Blooket game ID or link'}), 400
+    ok, limit_msg = _steal_limit_ok(client_ip)
+    if not ok:
+        return jsonify({'error': limit_msg}), 429
+    try:
+        title, content, kept, question_images = _steal_blooket(value)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    quiz_name = _save_stolen_quiz(client_ip, title, content, question_images, source='Blooket')
+    _steal_limit_record(client_ip)
+    return jsonify({'quiz_name': quiz_name})
+
+@app.route('/api/renamequiz', methods=['POST'])
+def api_renamequiz():
+    """JSON rename for the 3DS steal flow (same moves as the editor rename)."""
+    client_ip = get_client_ip()
+    quiz_name = (request.form.get('quiz_name') or '').strip()
+    new_name = (request.form.get('new_name') or '').strip()
+    if not quiz_name or not new_name or new_name == quiz_name:
+        return jsonify({'error': 'Nothing to rename'}), 400
+
+    quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
+    q_dir = os.path.join(os.path.dirname(__file__), "non_static", "question")
+    quiz_file = os.path.join(quiz_dir, f"{quiz_name}.txt")
+    new_quiz_file = os.path.join(quiz_dir, f"{new_name}.txt")
+    if not os.path.exists(quiz_file):
+        return jsonify({'error': 'Quiz not found'}), 404
+    if os.path.exists(new_quiz_file):
+        return jsonify({'error': 'A quiz with that name already exists'}), 400
+
+    try:
+        os.rename(quiz_file, new_quiz_file)
+        old_question = os.path.join(q_dir, f"{quiz_name}.json")
+        new_question = os.path.join(q_dir, f"{new_name}.json")
+        if os.path.exists(old_question):
+            os.rename(old_question, new_question)
+        old_images_meta = os.path.join(q_dir, f"{quiz_name}_images.json")
+        new_images_meta = os.path.join(q_dir, f"{new_name}_images.json")
+        if os.path.exists(old_images_meta):
+            os.rename(old_images_meta, new_images_meta)
+        old_images_dir = os.path.join(UPLOAD_FOLDER, secure_filename(quiz_name))
+        new_images_dir = os.path.join(UPLOAD_FOLDER, secure_filename(new_name))
+        if os.path.exists(old_images_dir):
+            os.rename(old_images_dir, new_images_dir)
+    except Exception as e:
+        logger.warning(f"Rename failed for {client_ip}: {e}")
+        return jsonify({'error': 'Rename failed on the server'}), 500
+
+    uploaded_data = read_uploaded_json()
+    if client_ip in uploaded_data and quiz_name in uploaded_data[client_ip]:
+        uploaded_data[client_ip].remove(quiz_name)
+        if new_name not in uploaded_data[client_ip]:
+            uploaded_data[client_ip].append(new_name)
+        write_uploaded_json(uploaded_data)
+
+    logger.info(f"{client_ip} renamed quiz '{quiz_name}' to '{new_name}'")
+    return jsonify({'quiz_name': new_name})
+
+@app.route('/api/deletequiz', methods=['POST'])
+def api_deletequiz():
+    """JSON delete for the 3DS (same cleanup as the web delete page)."""
+    ip = get_client_ip()
+    quiz_to_delete = (request.form.get('quiz_name') or '').strip()
+    if not quiz_to_delete:
+        return jsonify({'error': 'No quiz name given'}), 400
+
+    base_name = quiz_to_delete[:-4] if quiz_to_delete.endswith('.txt') else quiz_to_delete
+    uploaded_data = read_uploaded_json()
+    user_uploaded = uploaded_data.get(ip, [])
+    matched = (quiz_to_delete in user_uploaded) or ((base_name + '.txt') in user_uploaded)
+    if ip == "127.0.0.1":
+        matched = True
+    if not matched:
+        return jsonify({'error': 'Quiz not found'}), 404
+
+    quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
+    quiz_file = os.path.join(quiz_dir, base_name + ".txt")
+    if os.path.exists(quiz_file):
+        os.remove(quiz_file)
+    user_uploaded = [q for q in user_uploaded
+                     if q != quiz_to_delete and q != base_name and q != base_name + '.txt']
+    uploaded_data[ip] = user_uploaded
+    write_uploaded_json(uploaded_data)
+    try:
+        images_dir = os.path.join(UPLOAD_FOLDER, secure_filename(base_name))
+        if os.path.isdir(images_dir):
+            shutil.rmtree(images_dir, ignore_errors=True)
+        meta_file = os.path.join(os.path.dirname(__file__), "non_static", "question", f"{base_name}_images.json")
+        if os.path.exists(meta_file):
+            os.remove(meta_file)
+    except Exception as e:
+        logger.warning(f"Could not fully clean up quiz files for {ip}: {e}")
+
+    logger.info(f"User {ip} deleted quiz: {base_name} (3DS)")
+    return jsonify({'status': 'deleted'})
+
+def _store_quiz_image(quiz_name, image_file, display_name, question_index, client_ip):
+    """Validate, save, and register an image for a quiz.
+
+    Works with any seekable file-like object (Werkzeug uploads or BytesIO).
+    Returns the stored filename. Raises ValueError with a user-facing
+    message when validation fails.
+    """
+    # Get file extension
+    filename = secure_filename(display_name or 'image')
+    file_ext = os.path.splitext(filename)[1].lower()
+
+    # Validate file extension
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise ValueError(f'File type not allowed. Only {", ".join(ALLOWED_EXTENSIONS)} are supported')
+
+    # Check file size before saving
+    image_file.seek(0, os.SEEK_END)
+    file_size = image_file.tell()
+    image_file.seek(0)
+
+    if file_size > MAX_FILE_SIZE:
+        raise ValueError('File too large. Maximum size is 300MB')
+
+    # Create quiz-specific directory
+    quiz_image_dir = os.path.join(UPLOAD_FOLDER, secure_filename(quiz_name))
+    if not os.path.exists(quiz_image_dir):
+        os.makedirs(quiz_image_dir)
+
+    # Check image count (ignore the 3DS .565 conversion copies)
+    existing_images = [f for f in os.listdir(quiz_image_dir)
+                       if not f.endswith(".565")]
+    if len(existing_images) >= MAX_IMAGES_PER_QUIZ:
+        raise ValueError(f'Maximum {MAX_IMAGES_PER_QUIZ} images per quiz reached')
+
+    # Generate unique filename
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    new_filename = f"{timestamp}{file_ext}"
+    file_path = os.path.join(quiz_image_dir, new_filename)
+
+    # Save file
+    with open(file_path, 'wb') as f:
+        shutil.copyfileobj(image_file, f)
+
+    # Pre-convert for the 3DS client (best-effort; the serving route
+    # also converts on demand if this ever fails).
+    try:
+        from non_static.imgconv import png_to_rgb8, converted_path
+        png_to_rgb8(file_path, converted_path(file_path))
+    except Exception:
+        pass
+
+    # Update per-question images metadata if question_index provided
+    images_meta_dir = os.path.join(os.path.dirname(__file__), "non_static", "question")
+    if not os.path.exists(images_meta_dir):
+        os.makedirs(images_meta_dir)
+    images_meta_file = os.path.join(images_meta_dir, f"{quiz_name}_images.json")
+
+    question_key = ''
+    try:
+        if os.path.exists(images_meta_file):
+            with open(images_meta_file, 'r', encoding='utf-8') as mf:
+                images_meta = json.load(mf)
+        else:
+            images_meta = {}
+    except Exception:
+        images_meta = {}
+
+    if question_index is not None and question_index != '':
+        question_key = str(int(question_index))
+        images_meta.setdefault(question_key, [])
+        images_meta[question_key].append(new_filename)
+        try:
+            with open(images_meta_file, 'w', encoding='utf-8') as mf:
+                json.dump(images_meta, mf)
+        except Exception as e:
+            logger.warning(f"Failed to update images metadata for {client_ip}: {e}")
+
+    # Also maintain a human-readable image-names.json inside the quiz upload folder
+    try:
+        uploaded_names_file = os.path.join(quiz_image_dir, 'image-names.json')
+        if os.path.exists(uploaded_names_file):
+            with open(uploaded_names_file, 'r', encoding='utf-8') as uf:
+                uploaded_names = json.load(uf)
+        else:
+            uploaded_names = {}
+    except Exception:
+        uploaded_names = {}
+
+    # Use the original filename as display name (before timestamping)
+    display_name = filename
+    uploaded_names.setdefault(question_key, [])
+    uploaded_names[question_key].append({'filename': new_filename, 'name': display_name})
+    try:
+        with open(uploaded_names_file, 'w', encoding='utf-8') as uf:
+            json.dump(uploaded_names, uf)
+    except Exception as e:
+        logger.warning(f"Failed to update image metadata for {client_ip}: {e}")
+
+    return new_filename
+
+
+def download_image_from_url(image_url):
+    """Download an image from a URL into memory.
+
+    Returns (file-like BytesIO, file_ext). Raises ValueError with a
+    user-facing message on failure. Relative paths are resolved against
+    media.kahoot.it (used for Kahoot question images).
+    """
+    parsed = urllib.parse.urlparse(image_url)
+    if parsed.scheme not in ('http', 'https'):
+        if image_url.startswith('/'):
+            return download_image_from_url('https://media.kahoot.it' + image_url)
+        raise ValueError('Only http:// and https:// URLs are supported')
+
+    # Guess the extension from the URL path first; fall back to the
+    # Content-Type header of the response.
+    file_ext = os.path.splitext(urllib.parse.unquote(parsed.path))[1].lower()
+
+    req = urllib.request.Request(image_url, headers={'User-Agent': 'QuizFabric/1.0'})
+    image_data = io.BytesIO()
+    content_type = ''
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            content_type = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+            # Read at most MAX_FILE_SIZE + 1 bytes so oversized files are
+            # rejected without downloading them in full.
+            remaining = MAX_FILE_SIZE + 1
+            while remaining > 0:
+                chunk = resp.read(min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                image_data.write(chunk)
+                remaining -= len(chunk)
+    except Exception as e:
+        raise ValueError(f'Failed to download image: {e}')
+
+    if image_data.tell() > MAX_FILE_SIZE:
+        raise ValueError('File too large. Maximum size is 300MB')
+    image_data.seek(0)
+
+    if file_ext not in ALLOWED_EXTENSIONS:
+        file_ext = CONTENT_TYPE_EXTENSIONS.get(content_type, '')
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise ValueError('Could not determine image type. Only .png, .webp, .jpg, .jpeg, .gif are supported')
+
+    return image_data, file_ext
+
 
 @app.route('/upload_quiz_image/<quiz_name>', methods=['POST'])
 def upload_quiz_image(quiz_name):
@@ -491,86 +1324,12 @@ def upload_quiz_image(quiz_name):
         if image_file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
 
-        # Get file extension
-        filename = secure_filename(image_file.filename)
-        file_ext = os.path.splitext(filename)[1].lower()
-
-        # Validate file extension
-        if file_ext not in ALLOWED_EXTENSIONS:
-            return jsonify({'error': f'File type not allowed. Only {", ".join(ALLOWED_EXTENSIONS)} are supported'}), 400
-
-        # Check file size before saving
-        image_file.seek(0, os.SEEK_END)
-        file_size = image_file.tell()
-        image_file.seek(0)
-
-        if file_size > MAX_FILE_SIZE:
-            return jsonify({'error': f'File too large. Maximum size is 300MB'}), 400
-
-        # Create quiz-specific directory
-        quiz_image_dir = os.path.join(UPLOAD_FOLDER, secure_filename(quiz_name))
-        if not os.path.exists(quiz_image_dir):
-            os.makedirs(quiz_image_dir)
-
-        # Check image count
-        existing_images = os.listdir(quiz_image_dir)
-        if len(existing_images) >= MAX_IMAGES_PER_QUIZ:
-            return jsonify({'error': f'Maximum {MAX_IMAGES_PER_QUIZ} images per quiz reached'}), 400
-
-        # Generate unique filename
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        new_filename = f"{timestamp}{file_ext}"
-        file_path = os.path.join(quiz_image_dir, new_filename)
-
-        # Save file
-        image_file.save(file_path)
-
-        # Update per-question images metadata if question_index provided
-        images_meta_dir = os.path.join(os.path.dirname(__file__), "non_static", "question")
-        if not os.path.exists(images_meta_dir):
-            os.makedirs(images_meta_dir)
-        images_meta_file = os.path.join(images_meta_dir, f"{quiz_name}_images.json")
-
         question_index = request.form.get('question_index')
         try:
-            if os.path.exists(images_meta_file):
-                with open(images_meta_file, 'r', encoding='utf-8') as mf:
-                    images_meta = json.load(mf)
-            else:
-                images_meta = {}
-        except Exception:
-            images_meta = {}
-
-        if question_index is not None and question_index != '':
-            key = str(int(question_index))
-            images_meta.setdefault(key, [])
-            images_meta[key].append(new_filename)
-            try:
-                with open(images_meta_file, 'w', encoding='utf-8') as mf:
-                    json.dump(images_meta, mf)
-            except Exception as e:
-                logger.warning(f"Failed to update images metadata for {client_ip}: {e}")
-
-        # Also maintain a human-readable image-names.json inside the quiz upload folder
-        try:
-            uploaded_names_file = os.path.join(quiz_image_dir, 'image-names.json')
-            if os.path.exists(uploaded_names_file):
-                with open(uploaded_names_file, 'r', encoding='utf-8') as uf:
-                    uploaded_names = json.load(uf)
-            else:
-                uploaded_names = {}
-        except Exception:
-            uploaded_names = {}
-
-        # Use the original filename as display name (before timestamping)
-        display_name = filename
-        uploaded_names.setdefault(key if 'key' in locals() else '', [])
-        uploaded_names[key].append({'filename': new_filename, 'name': display_name})
-        try:
-            with open(uploaded_names_file, 'w', encoding='utf-8') as uf:
-                json.dump(uploaded_names, uf)
-        except Exception as e:
-            logger.warning(f"Failed to update image metadata for {client_ip}: {e}")
+            new_filename = _store_quiz_image(quiz_name, image_file, image_file.filename,
+                                             question_index, client_ip)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
 
         # Return image URL
         image_url = f"/UploadedImages/{secure_filename(quiz_name)}/{new_filename}"
@@ -587,11 +1346,116 @@ def upload_quiz_image(quiz_name):
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 
+@app.route('/upload_quiz_image_url/<quiz_name>', methods=['POST'])
+def upload_quiz_image_url(quiz_name):
+    """Download an image from a URL and store it for a quiz"""
+    client_ip = get_client_ip()
+
+    try:
+        data = request.get_json(silent=True) or {}
+        image_url = (data.get('image_url') or data.get('url') or '').strip()
+        if not image_url:
+            return jsonify({'error': 'No image URL provided'}), 400
+
+        try:
+            image_data, file_ext = download_image_from_url(image_url)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+
+        basename = urllib.parse.unquote(os.path.basename(urllib.parse.urlparse(image_url).path)) or f'image{file_ext}'
+        stem, _ = os.path.splitext(basename)
+        display_name = f'{stem}{file_ext}'
+
+        question_index = data.get('question_index')
+        try:
+            new_filename = _store_quiz_image(quiz_name, image_data, display_name,
+                                             question_index, client_ip)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+
+        # Return image URL
+        image_url_path = f"/UploadedImages/{secure_filename(quiz_name)}/{new_filename}"
+        logger.info(f"Image downloaded by {client_ip} from URL for quiz '{quiz_name}': {new_filename}")
+
+        return jsonify({
+            'success': True,
+            'url': image_url_path,
+            'filename': new_filename
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Image URL download failed for {client_ip}: {str(e)}")
+        return jsonify({'error': f'Download failed: {str(e)}'}), 500
+
+
+# Let's Encrypt HTTP-01 challenge support (certbot webroot mode writes the
+# challenge token files into this directory; this route serves them back).
+ACME_WEBROOT = os.path.join(os.path.dirname(__file__), "certbot_webroot")
+
+# Let's Encrypt (certbot) certificate location
+HTTPS_DOMAIN = "play.lucasgeitgey.com"
+CERT_DIR = os.path.join(os.path.expanduser("~"), "quizfabric-certs", "live", HTTPS_DOMAIN)
+
+@app.route('/.well-known/acme-challenge/<path:filename>')
+def acme_challenge(filename):
+    # certbot (and get_cert.py) write challenge files as
+    # <webroot>/.well-known/acme-challenge/<token>
+    file_path = os.path.join(ACME_WEBROOT, ".well-known", "acme-challenge",
+                             secure_filename(filename))
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return send_file(file_path)
+    return "Not found", 404
+
+
+_IMG_META_CACHE = {}
+
+def _image_question_number(quiz_name, fname_stem):
+    """1-based question number an image belongs to, or 0 when unknown.
+
+    The 3DS requests images by their converted name (<stem>.565); the
+    per-quiz images metadata maps each question index to the original
+    image filenames, so match on the stem.
+    """
+    meta = _IMG_META_CACHE.get(quiz_name)
+    if meta is None:
+        meta_file = os.path.join(os.path.dirname(__file__), "non_static",
+                                 "question", f"{quiz_name}_images.json")
+        try:
+            with open(meta_file, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except Exception:
+            meta = {}
+        _IMG_META_CACHE[quiz_name] = meta
+    for q_index, names in meta.items():
+        for name in names:
+            if os.path.splitext(str(name))[0] == fname_stem:
+                try:
+                    return int(q_index) + 1
+                except ValueError:
+                    return 0
+    return 0
+
+
 @app.route('/UploadedImages/<path:filepath>')
 def serve_uploaded_image(filepath):
     """Serve uploaded images"""
     try:
         file_path = os.path.join(UPLOAD_FOLDER, filepath)
+        # The 3DS client asks for the pre-converted copy (<name>.565); if it
+        # does not exist yet, generate it from the original image on demand.
+        # Stale copies (old converters kept only 24 GIF frames) are also
+        # regenerated here - convert_on_demand is a no-op when up to date.
+        if filepath.endswith(".565"):
+            # Log the 3DS question-image fetch: which question, which quiz.
+            try:
+                quiz_name, fname = os.path.split(filepath)
+                stem = os.path.splitext(fname)[0]
+                q_num = _image_question_number(quiz_name, stem)
+                logger.info(f"IMG {get_client_ip()} Q{q_num or '?'} {quiz_name}")
+            except Exception:
+                pass
+            from non_static.imgconv import convert_on_demand
+            convert_on_demand(file_path)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return send_file(file_path)
         return jsonify({'error': 'Image not found'}), 404
@@ -728,6 +1592,154 @@ def get_quiz_data(quiz_name):
 
     return jsonify(questions)
 
+def banner_image_path(quiz_name):
+    """URL path of a quiz's banner image, or '' when it has none. A banner is
+    any banner.<ext> file saved in the quiz's upload folder (stolen Kahoot
+    covers or the one uploaded with the quiz)."""
+    quiz_dir = os.path.join(UPLOAD_FOLDER, secure_filename(quiz_name))
+    if not os.path.isdir(quiz_dir):
+        return ''
+    try:
+        entries = sorted(os.listdir(quiz_dir))
+    except Exception:
+        return ''
+    for f in entries:
+        stem, ext = os.path.splitext(f)
+        if stem == 'banner' and ext in ALLOWED_EXTENSIONS:
+            return f"/UploadedImages/{secure_filename(quiz_name)}/{f}"
+    return ''
+
+@app.route('/wiki', methods=['GET'])
+def wiki():
+    """Simple how-to guide for the 3DS and DS clients."""
+    client_ip = get_client_ip()
+    logger.info(f"{client_ip} accessed the wiki")
+    return render_template("wiki.html")
+
+@app.route('/api/quizzes', methods=['GET'])
+def list_quizzes():
+    """JSON list of every quiz, for the 3DS solo/host modes."""
+    quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
+    quizzes = sorted(os.path.splitext(f)[0] for f in os.listdir(quiz_dir)
+                     if f.endswith(".txt"))
+    return jsonify({'quizzes': [{'name': q, 'banner': bool(banner_image_path(q))}
+                                for q in quizzes]})
+
+@app.route('/api/quizbanner/<path:quiz_name>')
+def api_quizbanner(quiz_name):
+    """A quiz's banner converted to the 3DS tiled format, max 64x64 (small
+    enough for the solo/host list thumbnails). 404 when the quiz has none."""
+    quiz_dir = os.path.join(UPLOAD_FOLDER, secure_filename(quiz_name))
+    banner_src = ''
+    if os.path.isdir(quiz_dir):
+        try:
+            entries = sorted(os.listdir(quiz_dir))
+        except Exception:
+            entries = []
+        for f in entries:
+            stem, ext = os.path.splitext(f)
+            if stem == 'banner' and ext in ALLOWED_EXTENSIONS:
+                banner_src = os.path.join(quiz_dir, f)
+                break
+    if not banner_src:
+        return 'No banner', 404
+    try:
+        from PIL import Image as PILImage
+        from non_static.imgconv import image_to_rgb8_animated_bytes
+        with PILImage.open(banner_src) as im:
+            payload = image_to_rgb8_animated_bytes(im, 64, 64)
+        import flask
+        return flask.Response(payload, mimetype='application/octet-stream')
+    except Exception as e:
+        logger.warning(f"Could not convert banner for '{quiz_name}': {e}")
+        return 'No banner', 404
+
+_KAHOOT_COVER_CACHE = {}
+
+@app.route('/api/kahootcover')
+def api_kahootcover():
+    """Proxies a Kahoot cover image and returns it as a 3DS-tiled payload.
+    size=64 (default) is for the list thumbnails, size=256 for the big
+    top-screen preview. The 3DS cannot reach https:// media hosts itself,
+    so the server fetches and converts it (cached in memory).
+
+    Pass id=<kahoot-uuid> to enable the on-disk banner cache: the payload
+    is stored as quiz-banners/<id>.565 (keyed by the quiz ID, not its
+    name, so same-named quizzes cannot clash). Once cached, the file is
+    served directly - that quiz ID is never fetched or converted again."""
+    url = (request.args.get('url') or '').strip()
+    quiz_id = (request.args.get('id') or '').strip()
+    if not re.match(r'^[0-9a-fA-F-]{10,}$', quiz_id):
+        # The 3DS sends no id parameter - derive the media id from the
+        # cover URL path (e.g. .../53006e81-...-20e3532743e1[_opt]).
+        base = os.path.basename(urllib.parse.urlparse(url).path)
+        quiz_id = base.rsplit('_opt', 1)[0]
+    if not url or not urllib.parse.urlparse(url).netloc.lower().endswith('kahoot.it'):
+        return 'Bad url', 400
+    try:
+        size = int(request.args.get('size', '64'))
+    except ValueError:
+        size = 64
+    if size == 256:
+        max_w, max_h = 256, 96
+    else:
+        size, max_w, max_h = 64, 64, 64
+
+    # On-disk banner cache: serve straight from disk when present.
+    banner_path = ''
+    if quiz_id and re.match(r'^[0-9a-fA-F-]{10,}$', quiz_id):
+        logger.info(f"CVR {get_client_ip()} {quiz_id}")
+        banner_dir = os.path.join(os.path.dirname(__file__), "quiz-banners")
+        banner_name = f"{quiz_id}.565" if size == 64 else f"{quiz_id}_256.565"
+        banner_path = os.path.join(banner_dir, banner_name)
+        if os.path.exists(banner_path):
+            return send_file(banner_path, mimetype='application/octet-stream')
+
+    cache_key = (url, size)
+    payload = _KAHOOT_COVER_CACHE.get(cache_key)
+    if payload is None:
+        try:
+            image_data, _ = download_image_from_url(url)
+            from PIL import Image as PILImage
+            from non_static.imgconv import image_to_rgb8_animated_bytes
+            with PILImage.open(image_data) as im:
+                payload = image_to_rgb8_animated_bytes(im, max_w, max_h)
+        except Exception as e:
+            logger.warning(f"Could not proxy Kahoot cover: {e}")
+            return 'No cover', 404
+        if len(_KAHOOT_COVER_CACHE) > 128:
+            _KAHOOT_COVER_CACHE.clear()
+        _KAHOOT_COVER_CACHE[cache_key] = payload
+        # Persist it so future requests (and server restarts) skip the
+        # fetch + conversion entirely.
+        if banner_path:
+            try:
+                os.makedirs(os.path.dirname(banner_path), exist_ok=True)
+                with open(banner_path, 'wb') as bf:
+                    bf.write(payload)
+                logger.info(f"CAH {get_client_ip()} {quiz_id}")
+            except Exception as e:
+                logger.warning(f"Could not cache banner for {quiz_id}: {e}")
+    import flask
+    return flask.Response(payload, mimetype='application/octet-stream')
+
+@app.route('/editquiz', methods=['GET', 'POST'])
+def editquiz_select():
+    client_ip = get_client_ip()
+    quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
+    if request.method == 'POST':
+        quiz = request.form.get('quiz', '').strip()
+        if quiz:
+            return redirect(url_for('edit_quiz', quiz_name=quiz))
+        return render_template("editquiz_select.html", user_uploaded=sorted(
+            os.path.splitext(f)[0] for f in os.listdir(quiz_dir)
+            if f.endswith(".txt")), message="Please pick a quiz first.")
+    # GET: list every quiz so the user can pick one to edit.
+    quizzes = sorted(os.path.splitext(f)[0] for f in os.listdir(quiz_dir)
+                     if f.endswith(".txt"))
+    logger.info(f"{client_ip} opened the quiz editor")
+    return render_template("editquiz_select.html", user_uploaded=quizzes)
+
 @app.route('/editquiz/<quiz_name>', methods=['GET', 'POST'])
 def edit_quiz(quiz_name):
     client_ip = get_client_ip()
@@ -750,6 +1762,10 @@ def edit_quiz(quiz_name):
     else:
         # POST: update the quiz text and/or rename
         new_content = request.form.get("quiz_content", "")
+        # Browsers submit form text with CRLF line endings; Python's text-mode
+        # write on Windows would turn each '\n' into '\r\n' again, producing
+        # '\r\r\n' on disk (blank lines everywhere after read_quiz strips '\r').
+        new_content = new_content.replace('\r\n', '\n').replace('\r', '\n')
         new_quiz_name = request.form.get("new_quiz_name", "").strip()
         use_legacy = request.form.get("use_legacy", "false") == "true"
         
@@ -872,6 +1888,21 @@ def makequiz():
             # Convert to text format
             text_content = ""
             for q in questions:
+                if q.get('type') == 'slider':
+                    text_content += '[SLIDER]' + q['question'] + "\n\n"
+                    text_content += _fmt_num(float(q.get('min', 0))) + "\n"
+                    text_content += _fmt_num(float(q.get('max', 100))) + "\n"
+                    text_content += "*" + _fmt_num(float(q.get('answer', 0))) + "\n"
+                    if q.get('tolerance'):
+                        text_content += "~" + _fmt_num(float(q['tolerance'])) + "\n"
+                    text_content += "\n"
+                    continue
+                if q.get('type') == 'puzzle':
+                    text_content += '[PUZZLE]' + q['question'] + "\n\n"
+                    for ans in q.get('answers', []):
+                        text_content += str(ans) + "\n"
+                    text_content += "\n"
+                    continue
                 text_content += q['question'] + "\n\n"
                 if q['type'] == 'mc':
                     for i, ans in enumerate(q['answers']):
@@ -886,6 +1917,9 @@ def makequiz():
         except json.JSONDecodeError:
             # It's legacy text
             pass
+        # Browsers submit form text with CRLF line endings; normalize them so
+        # Windows text-mode writing doesn't produce '\r\r\n' on disk.
+        quiz_content = quiz_content.replace('\r\n', '\n').replace('\r', '\n')
         # Save the quiz
         quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
         if not os.path.exists(quiz_dir):
@@ -990,6 +2024,12 @@ def submit_answer(quiz_name):
         try:
             answer = int(answer)
         except:
+            answer = None
+    elif question.get('type') == 'puzzle':
+        # The puzzle UI submits the ordered items as a JSON list
+        try:
+            answer = json.loads(answer)
+        except Exception:
             answer = None
     is_correct = validate_answer(question, answer)
     if not is_correct:
@@ -1217,10 +2257,8 @@ def view_times_file():
   ]
 }  # Add more words as needed
 
-@app.route('/host/<quiz_name>')
-def host_quiz(quiz_name):
-    client_ip = get_client_ip()
-    logger.info(f"{client_ip} is hosting quiz '{quiz_name}'")
+def create_host_session(quiz_name):
+    """Creates a hosted game session; returns (code, control_code)."""
     import random
     code = str(random.randint(1000, 9999))  # 4-digit code
     while code in sessions:
@@ -1242,17 +2280,36 @@ def host_quiz(quiz_name):
     for idx, q in enumerate(questions):
         imgs = images_meta.get(str(idx), [])
         if imgs:
-            q['images'] = [f"/UploadedImages/{quiz_name}/{fname}" for fname in imgs]
+            # Percent-encode the quiz name/filenames so clients that send raw
+            # HTTP request lines (the 3DS app) don't break on spaces.
+            from urllib.parse import quote
+            q['images'] = [f"/UploadedImages/{quote(quiz_name)}/{quote(fname)}" for fname in imgs]
 
     sessions[code] = {'host_sid': None, 'control_sids': [], 'players': [], 'quiz_name': quiz_name, 'questions': questions, 'current_q': 0, 'scores': {}, 'answers': [], 'last_correct': {}, 'state': 'lobby', 'control_code': control_code}
     control_to_game[control_code] = code
-    
+
     # Increment play count
     plays = load_plays()
     plays[quiz_name] = plays.get(quiz_name, 0) + 1
     save_plays(plays)
-    
+    return code, control_code
+
+@app.route('/host/<quiz_name>')
+def host_quiz(quiz_name):
+    client_ip = get_client_ip()
+    logger.info(f"{client_ip} is hosting quiz '{quiz_name}'")
+    code, control_code = create_host_session(quiz_name)
     return render_template('host.html', code=code, quiz_name=quiz_name, control_code=control_code, is_mobile=is_mobile())
+
+@app.route('/api/host/<quiz_name>', methods=['GET'])
+def api_host_quiz(quiz_name):
+    """JSON hosting for non-browser clients (the 3DS): creates the session and
+    returns the game and control codes."""
+    try:
+        code, control_code = create_host_session(quiz_name)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    return jsonify({'code': code, 'control_code': control_code})
 
 @app.route('/control/<code>')
 def control_quiz(code):
@@ -1261,6 +2318,14 @@ def control_quiz(code):
         return render_template('control.html', code=game_code, quiz_name=sessions[game_code]['quiz_name'], is_mobile=is_mobile())
     else:
         return "Invalid control code", 404
+
+@app.route('/resolve_control/<code>')
+def resolve_control(code):
+    # JSON variant for non-browser clients (e.g. the 3DS app): resolves a
+    # control code to the game code it belongs to.
+    if code in control_to_game:
+        return jsonify({'game_code': control_to_game[code]})
+    return jsonify({'error': 'Invalid control code'}), 404
 
 @app.route('/join')
 def join_game():
@@ -1321,13 +2386,8 @@ def handle_disconnect():
                     submitted_answers = {ans['name']: ans['answer_text'] for ans in sessions[code]['answers']}
                     q_index = sessions[code]['current_q'] - 1
                     q = sessions[code]['questions'][q_index] if q_index >= 0 and q_index < len(sessions[code]['questions']) else None
-                    correct_answer_text = ''
-                    if q:
-                        if q['type'] == 'mc':
-                            correct_answer_text = ', '.join(q['answers'][i] for i in q['correct_indices'])
-                        else:
-                            correct_answer_text = q['answer']
-                    socketio.emit('leaderboard', {'leaderboard': leaderboard, 'correct_answer': correct_answer_text, 'submitted_answers': submitted_answers}, room=code)
+                    correct_text = correct_answer_text(q)
+                    socketio.emit('leaderboard', {'leaderboard': leaderboard, 'correct_answer': correct_text, 'submitted_answers': submitted_answers}, room=code)
                 
                 break
 
@@ -1365,14 +2425,7 @@ def handle_join_game(data):
             q_index = sessions[code]['current_q'] - 1
             if q_index >= 0:
                 q_obj = sessions[code]['questions'][q_index]
-                payload = {'question': q_obj.get('question')}
-                if q_obj.get('type') == 'mc':
-                    payload.update({'answers': q_obj.get('answers', []), 'type': 'mc'})
-                else:
-                    payload.update({'type': 'type'})
-                if q_obj.get('images'):
-                    payload['images'] = q_obj.get('images')
-                emit('new_question', payload)
+                emit('new_question', question_payload(q_obj))
         elif state == 'leaderboard':
             leaderboard = []
             for name, score in sorted(sessions[code]['scores'].items(), key=lambda x: x[1], reverse=True):
@@ -1386,15 +2439,9 @@ def handle_join_game(data):
                             break
                 leaderboard.append({'name': name, 'score': score, 'last_correct': last_correct, 'avatar': avatar_for_name, 'left': left})
             submitted_answers = {ans['name']: ans['answer_text'] for ans in sessions[code]['answers']} if sessions[code]['answers'] else {}
-            correct_answer_text = ''
             q_index = sessions[code]['current_q'] - 1
             q = sessions[code]['questions'][q_index] if q_index >= 0 and q_index < len(sessions[code]['questions']) else None
-            if q:
-                if q['type'] == 'mc':
-                    correct_answer_text = ', '.join(q['answers'][i] for i in q['correct_indices'])
-                else:
-                    correct_answer_text = q['answer']
-            emit('leaderboard', {'leaderboard': leaderboard, 'correct_answer': correct_answer_text, 'submitted_answers': submitted_answers})
+            emit('leaderboard', {'leaderboard': leaderboard, 'correct_answer': correct_answer_text(q), 'submitted_answers': submitted_answers})
         elif state == 'finished':
             leaderboard = []
             for name, score in sorted(sessions[code]['scores'].items(), key=lambda x: x[1], reverse=True):
@@ -1429,15 +2476,7 @@ def handle_control_join(data):
         if state == 'question':
             q_index = sessions[code]['current_q'] - 1
             if q_index >= 0 and q_index < len(sessions[code]['questions']):
-                q_obj = sessions[code]['questions'][q_index]
-                payload = {'question': q_obj.get('question')}
-                if q_obj.get('type') == 'mc':
-                    payload.update({'answers': q_obj.get('answers', []), 'type': 'mc'})
-                else:
-                    payload.update({'type': 'type'})
-                if q_obj.get('images'):
-                    payload['images'] = q_obj.get('images')
-                emit('new_question', payload)
+                emit('new_question', question_payload(sessions[code]['questions'][q_index]))
         elif state == 'leaderboard':
             leaderboard_items = []
             for name, score in sorted(sessions[code]['scores'].items(), key=lambda x: x[1], reverse=True):
@@ -1472,14 +2511,7 @@ def handle_start_round(data):
             q_obj = sessions[code]['questions'][q_index]
             sessions[code]['answers'] = []
             sessions[code]['state'] = 'question'
-            payload = {'question': q_obj.get('question')}
-            if q_obj.get('type') == 'mc':
-                payload.update({'answers': q_obj.get('answers', []), 'type': 'mc'})
-            else:
-                payload.update({'type': 'type'})
-            if q_obj.get('images'):
-                payload['images'] = q_obj.get('images')
-            emit('new_question', payload, room=code)
+            emit('new_question', question_payload(q_obj), room=code)
             sessions[code]['current_q'] += 1
         else:
             sessions[code]['state'] = 'finished'
@@ -1498,6 +2530,8 @@ def handle_submit_answer(data):
         answer_text = answer
         if q and q['type'] == 'mc' and isinstance(answer, int):
             answer_text = q['answers'][answer] if answer < len(q['answers']) else str(answer)
+        elif q and q['type'] == 'puzzle' and isinstance(answer, list):
+            answer_text = ' → '.join(str(a) for a in answer)
         # Find player
         for player in sessions[code]['players']:
             if player['sid'] == request.sid:
@@ -1517,15 +2551,10 @@ def handle_submit_answer(data):
                             points = max(0, round(1000 - time_taken * 50))
                             sessions[code]['scores'][name] += points
                         # Emit to specific player
-                        correct_answer_text = ''
-                        if q:
-                            if q['type'] == 'mc':
-                                correct_answer_text = ', '.join(q['answers'][i] for i in q['correct_indices'])
-                            else:
-                                correct_answer_text = q['answer']
+                        correct_text = correct_answer_text(q)
                         for player in sessions[code]['players']:
                             if player['name'] == ans['name']:
-                                emit('answer_revealed', {'correct': correct, 'correct_answer': correct_answer_text}, room=player['sid'])
+                                emit('answer_revealed', {'correct': correct, 'correct_answer': correct_text}, room=player['sid'])
                                 break
                     # Emit leaderboard
                         # Emit leaderboard
@@ -1539,9 +2568,9 @@ def handle_submit_answer(data):
                                     break
                             leaderboard.append({'name': name, 'score': score, 'last_correct': last_correct, 'avatar': avatar})
                         submitted_answers = {ans['name']: ans['answer_text'] for ans in sessions[code]['answers']}
-                        emit('answers_revealed', {'correct_answer': correct_answer_text}, room=code)
+                        emit('answers_revealed', {'correct_answer': correct_text}, room=code)
                         sessions[code]['state'] = 'leaderboard'
-                        emit('leaderboard', {'leaderboard': leaderboard, 'correct_answer': correct_answer_text, 'submitted_answers': submitted_answers}, room=code)
+                        emit('leaderboard', {'leaderboard': leaderboard, 'correct_answer': correct_text, 'submitted_answers': submitted_answers}, room=code)
                 break
 
 @socketio.on('reveal_answers')
@@ -1550,12 +2579,7 @@ def handle_reveal_answers(data):
     if code in sessions and (sessions[code]['host_sid'] == request.sid or request.sid in sessions[code]['control_sids']):
         q_index = sessions[code]['current_q'] - 1
         q = sessions[code]['questions'][q_index] if q_index >= 0 and q_index < len(sessions[code]['questions']) else None
-        correct_answer_text = ''
-        if q:
-            if q['type'] == 'mc':
-                correct_answer_text = ', '.join(q['answers'][i] for i in q['correct_indices'])
-            else:
-                correct_answer_text = q['answer']
+        correct_text = correct_answer_text(q)
         for ans in sessions[code]['answers']:
             name = ans['name']
             time_taken = ans['time_taken']
@@ -1567,7 +2591,7 @@ def handle_reveal_answers(data):
             # Emit to specific player
             for player in sessions[code]['players']:
                 if player['name'] == ans['name']:
-                    emit('answer_revealed', {'correct': correct, 'correct_answer': correct_answer_text}, room=player['sid'])
+                    emit('answer_revealed', {'correct': correct, 'correct_answer': correct_text}, room=player['sid'])
                     break
         # Emit leaderboard
         leaderboard = []
@@ -1582,9 +2606,22 @@ def handle_reveal_answers(data):
                         break
             leaderboard.append({'name': name, 'score': score, 'last_correct': last_correct, 'avatar': avatar, 'left': left})
         submitted_answers = {ans['name']: ans['answer_text'] for ans in sessions[code]['answers']}
-        emit('answers_revealed', {'correct_answer': correct_answer_text}, room=code)
+        emit('answers_revealed', {'correct_answer': correct_text}, room=code)
         sessions[code]['state'] = 'leaderboard'
-        emit('leaderboard', {'leaderboard': leaderboard, 'correct_answer': correct_answer_text, 'submitted_answers': submitted_answers}, room=code)
+        emit('leaderboard', {'leaderboard': leaderboard, 'correct_answer': correct_text, 'submitted_answers': submitted_answers}, room=code)
+
+@socketio.on('kick_player')
+def handle_kick_player(data):
+    code = data['code']
+    name = data.get('name', '')
+    if code in sessions and (sessions[code]['host_sid'] == request.sid or request.sid in sessions[code]['control_sids']):
+        s = sessions[code]
+        for player in list(s['players']):
+            if player['name'] == name:
+                emit('kicked', {'message': 'You were kicked from the game'}, room=player['sid'])
+                s['players'].remove(player)
+                socketio.emit('player_left', {'name': name}, room=code)
+                break
 
 def process_actions():
     if actions_queue is None:
@@ -1688,11 +2725,40 @@ if __name__ == '__main__':
     active_clients = {}
     ip_to_sid = {}
     actions_queue = queue.Queue()
-    logger.info("Starting QuizFabric development server on port 5710...")
-    # Production: Use debug=False and recommend gunicorn with socketio
-    try:
-        socketio.run(app, debug=False, host="0.0.0.0", port=5710)
-    except Exception as e:
-        logger.error(f"Server error: {e}")
-    finally:
-        logger.info("QuizFabric server stopped.")
+
+    keyfile = os.path.join(CERT_DIR, "privkey.pem")
+    certfile = os.path.join(CERT_DIR, "fullchain.pem")
+
+    if os.path.isfile(keyfile) and os.path.isfile(certfile):
+        # One process serving the SAME app on two ports: plain HTTP on 5710
+        # (the port the router maps external 80 to - used by the 3DS) and
+        # HTTPS on 443 for browsers. Shared app object = shared live games.
+        from socketio import WSGIApp as socketio_wsgi_app
+        from gevent import pywsgi
+        from geventwebsocket.handler import WebSocketHandler
+        sio_app = socketio_wsgi_app(socketio, app)
+        tls_server = pywsgi.WSGIServer(('0.0.0.0', 443), sio_app,
+                                       keyfile=keyfile, certfile=certfile,
+                                       handler_class=WebSocketHandler, log=None)
+        plain_server = pywsgi.WSGIServer(('0.0.0.0', 5710), sio_app,
+                                         handler_class=WebSocketHandler, log=None)
+        plain_server.start()
+        logger.info("Serving plain HTTP on 5710 (router external port 80) and HTTPS on 443 - shared game state")
+        logger.info(f"HTTPS is live at https://{HTTPS_DOMAIN}")
+        try:
+            tls_server.serve_forever()
+        finally:
+            plain_server.stop()
+    else:
+        # No certificate yet: plain HTTP on 5710 as before. The ACME
+        # challenge route is active so certbot can issue the first
+        # certificate through the router's external port 80 -> 5710.
+        logger.info("Starting QuizFabric development server on port 5710...")
+        logger.info("No SSL certificate found - plain HTTP only for now")
+        # Production: Use debug=False and recommend gunicorn with socketio
+        try:
+            socketio.run(app, debug=False, host="0.0.0.0", port=5710)
+        except Exception as e:
+            logger.error(f"Server error: {e}")
+        finally:
+            logger.info("QuizFabric server stopped.")

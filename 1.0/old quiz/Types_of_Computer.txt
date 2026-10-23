@@ -1,0 +1,69 @@
+Program that allows applications and various pieces of hardware to communicate with each other.
+
+Computer Game
+Programming Language
+*System Software
+Application Software
+
+Set of instructions that tell a computer what to do or how to perform a task.
+
+*Software
+Hardware
+Users
+Malware
+
+Software used by computer users to run specific programs according to their needs
+
+System Software
+*Application Software
+Programming Language
+Program
+
+OS X is a _____________ software
+
+*System Software
+Hardware
+Application Software
+Programming Language
+
+Microsoft Word is a _____________ software
+
+Operating System
+Hardware
+System Software
+*Application Software
+
+Android
+
+Hardware
+*System Software
+Application Software
+Programming Language
+
+Google Chrome is a/an _____________
+
+Operating System
+*Application Software
+System Software
+Programming Language
+
+Adobe Photoshop
+
+Programming Language
+*Application Software
+Hardware
+Operating System
+
+Windows 7 is a _____________
+
+Application Software
+Hardware
+*System Software
+Programming Language
+
+MS PowerPoint is a/an _____________
+
+Programming Language
+*Application Software
+System Software
+Operating System

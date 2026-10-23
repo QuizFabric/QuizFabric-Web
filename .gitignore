@@ -3,3 +3,6 @@
 
 # Let's Encrypt HTTP-01 challenge tokens (act as keys during validation)
 certbot_webroot/
+
+# Generated update payload for the Pi (build_update.py output)
+update_out/

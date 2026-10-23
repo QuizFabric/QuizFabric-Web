@@ -1,0 +1,195 @@
+What is python in Computing?
+
+*Programming Language
+A type of hardware
+A snake that lives in the CPU
+A type of virus
+
+To test your code you can.............
+
+Press F6
+*Press F5 on your keyboard
+*Click Run
+Click save
+
+What is the name of the program we use to write Python code?
+
+*Idle
+Shell
+Python
+Windows
+
+What is a Variable?
+
+To remove things from memory
+A way of saving
+A process or procedure
+*Something stored that can change within the program
+
+What colour is the word 'print'?
+
+Blue
+Green
+*Purple
+Red
+
+What always follows a function, for example 'print'?
+
+Question mark
+*Open and closed brackets
+Quotation marks
+Dollar sign $
+
+What is a string?
+
+Letters
+*A line of text that can contain numbers, letters or symbols
+Numbers
+Symbols
+
+What is an integer?
+
+*Whole number
+Decimal number
+Float
+Operator
+
+What is a float?
+
+Operator
+String
+*Decimal Number
+Whole number
+
+What is an operator in python?
+
+The person who uses the program
+*something that performs operations on variables and values
+Windows platform
+The most important concept in programming
+
+The correct code for "Hello World" would be...?
+
+Print("Hello World")
+print"Hello World"
+print(Hello World)
+*print("Hello World")
+
+Which of these is a  character used for commenting?
+
+*#
+/
+"
+*
+
+What messages often appear when there is a mistake in the code?
+
+*Invalid Syntax
+Error
+String Error
+*Syntax error
+
+What does Syntax mean?
+
+Too many symbols
+Too many complicated words
+*incorrectly placed character  in a command that causes a failure
+You haven't saved your work for a long time and it can get lost.
+
+What symbol is used at the beginning of a comment?
+
+\
+*#
+/
+=
+
+What is a function?
+
+A type of Party
+A way of doing something so it functions
+A code that stores things that can change
+*A block of code that performs a specific task
+
+What is a Procedure?
+
+A sequence that can be repeated
+How to do something in a program
+*A certain section of a program that performs a specific task
+Instructions
+
+What does 'def' do in Python?
+
+Used to display a string
+*Means 'define' and is used to set up a function or procedure
+It tells python you want to create a variable
+Makes something meaningful
+
+What is a parameter?
+
+A set way of doing something
+A type of criteria for Python to follow
+*The input within a function or procedure
+What is displayed when you run the module
+
+What is a 'For loop'?
+
+*A  loop  used for iterating over a sequence
+Something that repeats for a certain amount of times
+Code that can only be used in a string
+A block of code that repeats itself forever until stopped
+
+What is the difference between a 'for loop' and 'while loop'?
+
+A for loop repeats itself and while doesn't
+*For loop knows how many times to repeat, while loop doesn't
+While loop runs at the same time as the main program
+One is a positive loop the other is a negative loop
+
+What does 'Input' in Python allow to happen?
+
+The user can use the mouse to respond to the program
+It allows the program to run properly
+It allows variables to be stored
+*The user can use the keyboard to type a response
+
+Which of these is an inbuilt function of Python?
+
+*randint()
+Randint()
+times()
+sleepyhead()
+
+If the outcome of a program depended on certain conditions, what selection words could be used?
+
+IF, ELIS, FILE
+ELSE, EL, INT
+*IF, ELSE, ELIF
+INT, FLOAT, ELF
+
+What is this an example of?
+
+Procedure
+Variable
+Selection
+*Function
+
+What is this an example of?
+
+*Procedure
+Function
+Variable
+Selection
+
+What is this an example of?
+
+*Variable
+Selection
+Procedure
+Function
+
+What is this an example of?
+
+Variable
+*Selection
+Function
+Procedure

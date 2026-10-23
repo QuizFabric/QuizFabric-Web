@@ -4,12 +4,17 @@ import requests
 import json
 import time
 import threading
+import os
 
-SERVER_URL = 'http://localhost:5710'
+# The dev server runs on 5710; the production wsgi.py runs on 80.
+# run_production.bat sets QUIZFABRIC_SERVER accordingly.
+SERVER_URL = os.environ.get('QUIZFABRIC_SERVER', 'http://localhost:5710')
 
 def get_data():
     try:
-        response = requests.get(f'{SERVER_URL}/gui_data')
+        # verify=False: the GUI talks to localhost but the Let's Encrypt
+        # certificate is issued for the public domain name.
+        response = requests.get(f'{SERVER_URL}/gui_data', verify=False, timeout=5)
         if response.status_code == 200:
             return response.json()
         return []
@@ -18,7 +23,7 @@ def get_data():
 
 def send_action(action):
     try:
-        requests.post(f'{SERVER_URL}/gui_action', json=action)
+        requests.post(f'{SERVER_URL}/gui_action', json=action, verify=False, timeout=5)
     except:
         pass
 

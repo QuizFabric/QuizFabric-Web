@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>QuizFabric - Edit Quiz</title>
+    <link rel="icon" href="/data/icon.png" type="image/png">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/data/icon.png">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="description" content="A modern quiz application for creating and taking quizzes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="QuizFabric">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .app-icon {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            height: 40px;
+            width: 40px;
+            z-index: 1000;
+            opacity: 0.9;
+        }
+        .editquiz-container {
+            max-width: 800px;
+            margin: 20px auto;
+            background: rgba(255, 255, 255, 0.18);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            box-shadow: 0 10px 30px rgba(40, 8, 60, 0.35);
+        }
+        h1 {
+            color: #fff;
+            text-align: center;
+            text-shadow: 0 2px 8px rgba(40, 8, 60, 0.6);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .question-type {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .question-type label {
+            display: inline;
+            font-weight: normal;
+        }
+        .answers-section {
+            margin-left: 20px;
+        }
+        .answer-input {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .answer-input input[type="text"] {
+            flex: 1;
+            margin-right: 10px;
+        }
+        .btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+        }
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+        .btn-success {
+            background-color: #28a745;
+        }
+        .btn-success:hover {
+            background-color: #218838;
+        }
+        .btn-warning {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        .btn-warning:hover {
+            background-color: #e0a800;
+        }
+        .question-list {
+            margin-top: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.18);
+            border-radius: 12px;
+        }
+        .question-item {
+            padding: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #fff;
+        }
+        .question-item:last-child {
+            border-bottom: none;
+        }
+        .legacy-btn {
+            background: #6c757d;
+            color: #fff;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 15px;
+        }
+        @media (max-width: 768px) {
+            .editquiz-container {
+                margin: 10px;
+                padding: 15px;
+            }
+            .question-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .question-item div {
+                margin-bottom: 5px;
+            }
+        }
+            // Image upload functions - upload for current question (edit mode)
+            async function uploadImageForCurrentQuestion() {
+                const fileInput = document.getElementById('image-input');
+                if (!fileInput.files.length) {
+                    showStatus('Please select at least one image file', 'error');
+                    return;
+                }
+
+                // Determine target question index: editingIndex if editing, otherwise next index (when adding)
+                const targetIndex = (typeof editingIndex === 'number' && editingIndex >= 0) ? editingIndex : questions.length;
+
+                for (const file of fileInput.files) {
+                    const formData = new FormData();
+                    formData.append('image', file);
+                    formData.append('question_index', String(targetIndex));
+
+                    try {
+                                console.log('Uploading', file.name, 'for quiz', quizNameDisplay, 'questionIndex', targetIndex);
+                                const response = await fetch(`/upload_quiz_image/${encodeURIComponent(quizNameDisplay)}`, {
+                                    method: 'POST',
+                                    body: formData
+                                });
+                                console.log('Fetch returned', response.status, response.statusText);
+                        let data = null;
+                        try {
+                            data = await response.json();
+                        } catch (err) {
+                            // Response was not JSON (likely an HTML error page). Show raw text limited.
+                                    const text = await response.text();
+                                    const preview = text.substring(0, 1000);
+                                    console.error('Non-JSON upload response:', response.status, preview);
+                                    showStatus(`✗ Error uploading ${file.name}: HTTP ${response.status} - see console`, 'error');
+                            continue;
+                        }
+                        if (response.ok) {
+                            showStatus(`✓ Uploaded: ${file.name}`, 'success');
+                            addImagePreview(data.url, file.name, targetIndex);
+                        } else {
+                            const errMsg = data && data.error ? data.error : JSON.stringify(data);
+                            showStatus(`✗ Error uploading ${file.name}: ${errMsg}`, 'error');
+                        }
+                    } catch (error) {
+                        showStatus(`✗ Error uploading ${file.name}: ${error.message}`, 'error');
+                    }
+                }
+
+                fileInput.value = '';
+            }
+                border: none;
+                border-radius: 50%;
+                width: 25px;
+                height: 25px;
+                cursor: pointer;
+                font-size: 14px;
+            }
+            .image-preview-item .remove-btn:hover {
+                background: darkred;
+            }
+            .upload-status {
+                margin-top: 10px;
+                padding: 10px;
+                border-radius: 4px;
+                display: none;
+                margin-bottom: 10px;
+            }
+            .upload-status.success {
+                background-color: #d4edda;
+                color: #155724;
+                display: block;
+            }
+            .upload-status.error {
+                background-color: #f8d7da;
+                color: #721c24;
+                display: block;
+            }
+    </style>
+</head>
+<body>
+<img src="/data/icon.png" alt="QuizFabric" class="app-icon">
+    <div class="editquiz-container">
+        <h1>QuizFabric - Edit: <span id="quiz-name-display"></span></h1>
+        
+
+            <div class="image-upload-section">
+                <h3>📸 Quiz Images</h3>
+                <p style="color: rgba(255, 255, 255, 0.75); margin: 10px 0;">Supported formats: PNG, WebP, JPG, JPEG | Max file size: 300MB | Max 20 images per quiz</p>
+                <input type="file" id="image-input" accept=".png,.webp,.jpg,.jpeg" multiple>
+                <button type="button" onclick="uploadImageForCurrentQuestion()" class="btn btn-primary" style="margin-top: 10px;">Upload Images For Current Question</button>
+                <div id="upload-status" class="upload-status"></div>
+                <div id="image-preview" class="image-preview"></div>
+            </div>
+
+        <button type="button" class="legacy-btn" onclick="toggleEditor()">Switch to Legacy Text Editor</button>
+
+        <form id="edit-form" method="POST" action="/editquiz/Stardew%20Valley%20Quiz">
+            <div style="margin-bottom: 15px;">
+                <label for="new_quiz_name" style="font-weight: bold;">Rename Quiz (leave blank to keep current name):</label>
+                <input type="text" id="new_quiz_name" placeholder="New quiz name" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
+            </div>
+
+            <div id="modern-editor">
+                <div id="question-section">
+                    <h3>Add/Edit Question</h3>
+                    <div class="form-group">
+                        <label for="question">Question:</label>
+                        <input type="text" id="question" placeholder="Enter your question">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Question Type:</label>
+                        <div class="question-type">
+                            <label><input type="radio" name="qtype" value="mc" checked> Multiple Choice</label>
+                            <label><input type="radio" name="qtype" value="typein"> Type-in Answer</label>
+                        </div>
+                    </div>
+
+                    <div id="mc-options" class="form-group">
+                        <label>Answers (select the correct one):</label>
+                        <div class="answers-section" id="answers-container">
+                            <div class="answer-input">
+                                <input type="text" class="answer" placeholder="Answer 1">
+                                <input type="radio" name="correct" value="0">
+                            </div>
+                            <div class="answer-input">
+                                <input type="text" class="answer" placeholder="Answer 2">
+                                <input type="radio" name="correct" value="1">
+                            </div>
+                            <div class="answer-input">
+                                <input type="text" class="answer" placeholder="Answer 3">
+                                <input type="radio" name="correct" value="2">
+                            </div>
+                            <div class="answer-input">
+                                <input type="text" class="answer" placeholder="Answer 4">
+                                <input type="radio" name="correct" value="3">
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-secondary" onclick="addAnswer()">➕ Add Answer</button>
+                    </div>
+
+                    <div id="typein-option" class="form-group" style="display: none;">
+                        <label for="typein-answer">Correct Answer:</label>
+                        <input type="text" id="typein-answer" placeholder="Enter the correct answer">
+                    </div>
+
+                    <button type="button" class="btn" id="add-btn" onclick="addQuestion()">Add Question</button>
+                </div>
+
+                <div class="question-list">
+                    <h3>Questions:</h3>
+                    <div id="questions-container"></div>
+                </div>
+
+                <input type="hidden" name="quiz_content" id="quiz_content">
+                <input type="hidden" name="new_quiz_name" id="form_new_quiz_name">
+                <input type="hidden" name="use_legacy" id="use_legacy" value="false">
+
+                <br>
+                <button type="submit" class="btn btn-success" id="save-btn">Save Quiz</button>
+            </div>
+
+            <!-- Legacy Text Editor -->
+            <div id="legacy-editor" style="display: none;">
+                <h3>Quiz Content (Text Format):</h3>
+                <textarea id="legacy-content" name="legacy_content" style="width: 100%; height: 400px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace;"></textarea>
+                <br><br>
+                <button type="submit" class="btn btn-success" id="save-legacy-btn">Save Quiz</button>
+            </div>
+
+        </form>
+
+        <br>
+        <a href="/" class="btn">Back to Home</a>
+    </div>
+
+    <script>
+        let questions = [];
+        let editingIndex = -1;
+        let usingLegacy = false;
+            const quizNameDisplay = `Stardew Valley Quiz`;
+        
+            document.getElementById('quiz-name-display').textContent = quizNameDisplay;
+
+        function toggleEditor() {
+            usingLegacy = !usingLegacy;
+            const modernEditor = document.getElementById('modern-editor');
+            const legacyEditor = document.getElementById('legacy-editor');
+            const toggleBtn = document.querySelector('.legacy-btn');
+            
+            if (usingLegacy) {
+                // Switch to legacy editor
+                modernEditor.style.display = 'none';
+                legacyEditor.style.display = 'block';
+                toggleBtn.textContent = 'Switch to Modern Editor';
+                
+                // Get current quiz content from modern editor
+                const currentContent = document.getElementById('quiz_content').value;
+                document.getElementById('legacy-content').value = currentContent;
+                document.getElementById('use_legacy').value = 'true';
+            } else {
+                // Switch to modern editor
+                modernEditor.style.display = 'block';
+                legacyEditor.style.display = 'none';
+                toggleBtn.textContent = 'Switch to Legacy Text Editor';
+                
+                // Get content from legacy editor and parse it
+                const legacyContent = document.getElementById('legacy-content').value;
+                parseQuizContent(legacyContent);
+                document.getElementById('use_legacy').value = 'false';
+            }
+        }
+
+        // Handle form submission to include rename
+        document.getElementById('edit-form').addEventListener('submit', function(e) {
+            const newName = document.getElementById('new_quiz_name').value.trim();
+            if (newName) {
+                document.getElementById('form_new_quiz_name').value = newName;
+            }
+            
+            if (!usingLegacy) {
+                // Modern editor: quiz_content is already set
+            } else {
+                // Legacy editor: copy legacy content to quiz_content
+                document.getElementById('quiz_content').value = document.getElementById('legacy-content').value;
+            }
+        });
+
+        // Parse initial quiz_content - try JSON first, otherwise treat as legacy and preserve blank lines
+        function parseQuizContent(content) {
+            if (!content) {
+                questions = [];
+                updateQuestionsList();
+                return;
+            }
+            // Try JSON (modern editor format)
+            try {
+                const parsed = JSON.parse(content);
+                if (Array.isArray(parsed)) {
+                    questions = parsed;
+                    updateQuestionsList();
+                    usingLegacy = false;
+                    document.getElementById('modern-editor').style.display = 'block';
+                    document.getElementById('legacy-editor').style.display = 'none';
+                    document.getElementById('use_legacy').value = 'false';
+                    return;
+                }
+            } catch (e) {
+                // not JSON, fall through to legacy
+            }
+
+            // Legacy text: preserve content as-is in legacy textarea but DO NOT auto-switch editors.
+            // Load legacy content into the textarea so user can toggle to it manually if desired.
+            document.getElementById('legacy-content').value = content;
+            // Ensure we keep modern editor visible by default
+            document.getElementById('modern-editor').style.display = 'block';
+            document.getElementById('legacy-editor').style.display = 'none';
+            document.getElementById('use_legacy').value = 'false';
+            // Attempt a best-effort parse for modern preview without altering original content: do a non-destructive parse
+            const blocks = content.split(/\n\s*\n+/);
+            const parsedQuestions = [];
+            blocks.forEach(block => {
+                // Split and preserve original spacing for legacy textarea, but use trimmed lines for parsing
+                const rawLines = block.split('\n').map(l => l.replace(/\r$/, ''));
+                const lines = rawLines.map(l => l === undefined ? '' : l);
+                if (lines.length === 0) return;
+
+                // Pick the question as the first non-empty line that does NOT look like an answer (doesn't start with '*')
+                let questionLineIndex = -1;
+                for (let k = 0; k < lines.length; k++) {
+                    const t = (lines[k] || '').trim();
+                    if (!t) continue;
+                    if (!t.startsWith('*')) {
+                        questionLineIndex = k;
+                        break;
+                    }
+                }
+                // If all lines start with '*' or we didn't find a non-answer, fall back to first line
+                if (questionLineIndex === -1) questionLineIndex = 0;
+
+                const question = (lines[questionLineIndex] || '').trim();
+                const answers = [];
+                let correctIndex = -1;
+                let type = 'typein';
+                for (let i = 0; i < lines.length; i++) {
+                    if (i === questionLineIndex) continue;
+                    const raw = lines[i];
+                    if (raw === undefined) continue;
+                    const line = raw.trim();
+                    if (!line) continue;
+                    let ans = line;
+                    if (ans.startsWith('*')) {
+                        ans = ans.substring(1).trim();
+                        correctIndex = answers.length;
+                        type = 'mc';
+                    }
+                    answers.push(ans.trim());
+                }
+                if (type === 'mc' && answers.length > 1) {
+                    parsedQuestions.push({question, answers, correctIndex, type});
+                } else if (type === 'typein' && answers.length === 1) {
+                    parsedQuestions.push({question, answers, correctIndex: 0, type});
+                }
+            });
+            if (parsedQuestions.length) {
+                // Populate a best-effort modern preview but keep legacy editor content intact
+                questions = parsedQuestions;
+                updateQuestionsList();
+            } else {
+                questions = [];
+                updateQuestionsList();
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            const initialContent = `Which season is the Flower Dance held in?
+
+Summer
+Fall
+*Spring
+Winter
+
+Which festival has everyone adding an ingredient to a potluck soup?
+
+*Luau
+Stardew Valley Fair
+Egg Festival
+Spirit&#39;s Eve
+
+Which festival has a Grange Display contest?
+
+Egg Festival
+*Stardew Valley Fair
+Luau
+Night Market
+
+Which festival features a haunted maze?
+
+Flower Dance
+Festival of Ice
+*Spirit&#39;s Eve
+Dance of the Moonlight Jellies
+
+What do you hunt for at the Egg Festival?
+
+*Eggs
+Rabbits
+Strawberries
+Chickens
+
+On which day is the Feast of the Winter Star?
+
+Winter 1
+*Winter 25
+Winter 8
+Winter 15
+
+Which winter event has a mermaid show?
+
+Festival of Ice
+Feast of the Winter Star
+*Night Market
+Dance of the Moonlight Jellies
+
+Which season is the Festival of Ice held in?
+
+Spring
+Summer
+Fall
+*Winter
+
+Which seeds does Mayor Lewis give you at the start of the game?
+
+Cauliflower Seeds
+Potato Seeds
+Kale Seeds
+*Parsnip Seeds
+
+Which crop grows in both Summer and Fall?
+
+Melon
+Pumpkin
+Radish
+*Corn
+
+What does the expensive Rare Seed grow into?
+
+Ancient Fruit
+Starfruit
+*Sweet Gem Berry
+Crystal Fruit
+
+What is the main job of a scarecrow?
+
+*Keeping crows away from crops
+Watering crops
+Fertilising soil
+Attracting bees
+
+What choice does Demetrius offer about the farm cave?
+
+Wine cellar or jam pantry
+*Mushrooms or fruit bats
+Slimes or bats
+Bees or flowers
+
+Which Community Center bundle unlocks the Greenhouse?
+
+Boiler Room
+Vault
+Crafts Room
+*Pantry
+
+Which Fall berry keeps producing after the first harvest?
+
+*Cranberries
+Pumpkin
+Yam
+Eggplant
+
+How many floors deep are the Mines?
+
+100
+150
+*120
+80
+
+What is inside the treasure chest on floor 100 of the Mines?
+
+Galaxy Sword
+Iridium Bar
+Prismatic Shard
+*Stardrop
+
+Which item unlocks the Skull Cavern in the desert?
+
+*Skull Key
+Rusty Key
+Skeleton Key
+Galaxy Key
+
+What does the Rusty Key open?
+
+The Quarry
+The Desert
+*The Sewers
+The Casino
+
+Which item do you need to get the Galaxy Sword?
+
+Diamond
+*Prismatic Shard
+Iridium Bar
+Omni Geode
+
+Who gives you the rusty sword at the start of the game?
+
+*Marlon
+Gil
+Clint
+Gunther
+
+Which item lets you understand the Dwarf&#39;s language?
+
+Ancient Dictionary
+*Dwarvish Translation Guide
+Secret Notes
+Elvish Scrolls
+
+Which shards power the Volcano Forge on Ginger Island?
+
+Obsidian Shards
+Fire Shards
+*Cinder Shards
+Lava Shards
+
+Which legendary fish is caught in Spring?
+
+Glacierfish
+*The Legend
+Crimsonfish
+Angler
+
+Which legendary fish lives in the Sewers?
+
+Carp
+Midnight Carp
+Scorpion Carp
+*Mutant Carp
+
+What is the best fishing rod in the game?
+
+Bamboo Pole
+Fiberglass Rod
+*Iridium Rod
+Training Rod
+
+What can the Iridium Rod hold that other rods cannot?
+
+Lures
+*Tackle
+Nets
+Anchors
+
+Which animal digs up truffles on your farm?
+
+Cow
+Sheep
+*Pig
+Goat
+
+Befriending which villager lets you buy blue chickens?
+
+Marnie
+Lewis
+Alex
+*Shane
+
+Which building do you need before you can ride a horse?
+
+*Stable
+Barn
+Coop
+Silo
+
+Which animal produces a Rabbit&#39;s Foot?
+
+Chicken
+Duck
+Dinosaur
+*Rabbit
+
+What do you need to propose marriage in Stardew Valley?
+
+Wedding Ring
+*Mermaid&#39;s Pendant
+Bouquet
+Amulet
+
+Who is the town carpenter?
+
+*Robin
+Marnie
+Leah
+Caroline
+
+Who is the mayor of Pelican Town?
+
+Pierre
+Morris
+*Lewis
+Gus
+
+Who runs the Stardrop Saloon?
+
+Clint
+Willy
+*Gus
+Harvey
+
+What is the Wizard&#39;s full name?
+
+Merlin
+Magnus
+Marlon
+*M. Rasmodius
+
+Which villager famously loves Salad?
+
+*Leah
+Penny
+Emily
+Abigail
+
+Which gem does Abigail love?
+
+Jade
+*Amethyst
+Emerald
+Ruby
+
+Which drink does Shane love?
+
+Juice
+Coffee
+*Beer
+Milk
+
+Which drink does Harvey love?
+
+Tea
+Milk
+Juice
+*Coffee
+
+What does Penny love?
+
+Sunflower
+*Poppy
+Fairy Rose
+Tulip
+
+What does the Wizard love?
+
+Red Mushroom
+Morel
+Chanterelle
+*Purple Mushroom
+
+What does Krobus love?
+
+*Void Egg
+Duck Egg
+Ostrich Egg
+Chicken Egg
+
+What does Pam love?
+
+Cauliflower
+Garlic
+*Parsnip
+Kale
+
+What does Evelyn love?
+
+Pink Cake
+*Chocolate Cake
+Cookie
+Pudding
+
+What does George love?
+
+Dandelion
+Wild Horseradish
+Spring Onion
+*Leek
+
+What does Jodi love?
+
+*Crispy Bass
+Baked Fish
+Fish Taco
+Fried Calamari
+
+What does Robin love?
+
+Apple
+Cherry
+*Peach
+Apricot
+
+What does Haley love?
+
+Seaweed
+*Coconut
+Coral
+Nautilus Shell
+
+What does Elliott love?
+
+Wool
+Rabbit&#39;s Foot
+Cloth
+*Duck Feather
+
+What does Kent love?
+
+Fried Calamari
+Fiddlehead Risotto
+*Roasted Hazelnuts
+Escargot
+
+What does Willy love?
+
+*Catfish
+Bream
+Salmon
+Perch
+
+What does Maru love?
+
+Copper Bar
+*Battery Pack
+Iron Bar
+Gold Bar
+
+What does Linus love?
+
+Blackberry
+Salmonberry
+Grape
+*Cactus Fruit
+
+Where do you find Krobus?
+
+The Mines
+The Desert
+The Beach
+*The Sewers
+
+What does the Statue of Uncertainty do?
+
+*Changes your profession
+Changes your name
+Resets your skills
+Changes your appearance
+
+Who runs the casino in the desert?
+
+Sandy
+Marlon
+*Mr. Qi
+Morris
+
+What currency does the casino use?
+
+Star Tokens
+Golden Walnuts
+Club Coins
+*Qi Coins
+
+Which arcade game is playable in the Stardrop Saloon?
+
+Tetris
+*Journey of the Prairie King
+Pong
+Snake
+
+Which Community Center room unlocks the bus to the desert?
+
+*Vault
+Pantry
+Boiler Room
+Crafts Room
+
+Which room repairs the minecarts?
+
+Pantry
+Vault
+Crafts Room
+*Boiler Room
+
+Which room unlocks the Quarry?
+
+Pantry
+Vault
+*Crafts Room
+Boiler Room
+
+Who sells backpack upgrades?
+
+Clint
+Morris
+*Pierre
+Gus
+
+What is the maximum backpack size?
+
+*36 slots
+24 slots
+30 slots
+42 slots
+
+What does Grandpa&#39;s Shrine give you at 4 candles?
+
+Statue of Fortune
+Statue of Endless Fortune
+Statue of True Perfection
+*Statue of Perfection
+
+What does the Statue of Perfection produce each day?
+
+Gold Ore
+*Iridium Ore
+Copper Ore
+Coal
+
+Which farm layout has monsters at night?
+
+Standard Farm
+Forest Farm
+*Wilderness Farm
+Beach Farm
+
+How many hearts do you need to marry someone?
+
+*10
+8
+12
+14
+
+Who sells the Mermaid&#39;s Pendant?
+
+Willy
+Gus
+Mr. Qi
+*Old Mariner
+
+What does a Stardrop do?
+
+Fully heals you
+*Increases your maximum energy
+Increases your luck
+Increases your speed
+`;
+            parseQuizContent(initialContent);
+
+            document.querySelectorAll('input[name="qtype"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.value === 'mc') {
+                        document.getElementById('mc-options').style.display = 'block';
+                        document.getElementById('typein-option').style.display = 'none';
+                    } else {
+                        document.getElementById('mc-options').style.display = 'none';
+                        document.getElementById('typein-option').style.display = 'block';
+                    }
+                });
+            });
+        });
+
+        function addQuestion() {
+            const question = document.getElementById('question').value.trim();
+            const qtype = document.querySelector('input[name="qtype"]:checked').value;
+            let answers = [];
+            let correctIndex = -1;
+
+            if (qtype === 'mc') {
+                answers = Array.from(document.querySelectorAll('.answer')).map(input => input.value.trim()).filter(val => val);
+                const correctRadio = document.querySelector('input[name="correct"]:checked');
+                if (correctRadio) correctIndex = parseInt(correctRadio.value);
+                if (answers.length < 2 || correctIndex === -1 || correctIndex >= answers.length) {
+                    alert('Please enter at least 2 answers and select the correct one.');
+                    return;
+                }
+            } else {
+                const answer = document.getElementById('typein-answer').value.trim();
+                if (!answer) {
+                    alert('Please enter the correct answer.');
+                    return;
+                }
+                answers = [answer];
+                correctIndex = 0;
+            }
+
+            if (!question) {
+                alert('Please enter a question.');
+                return;
+            }
+
+            if (editingIndex >= 0) {
+                questions[editingIndex] = {question, answers, correctIndex, type: qtype};
+                editingIndex = -1;
+                document.getElementById('add-btn').textContent = 'Add Question';
+            } else {
+                questions.push({question, answers, correctIndex, type: qtype});
+            }
+            updateQuestionsList();
+            resetForm();
+        }
+
+        function resetForm() {
+            document.getElementById('question').value = '';
+            document.querySelectorAll('.answer').forEach(input => input.value = '');
+            document.querySelectorAll('input[name="correct"]').forEach(radio => radio.checked = false);
+            document.getElementById('typein-answer').value = '';
+        }
+
+        function updateQuestionsList() {
+            const container = document.getElementById('questions-container');
+            container.innerHTML = '';
+            questions.forEach((q, idx) => {
+                const div = document.createElement('div');
+                div.className = 'question-item';
+                let answersText;
+                if (q.type === 'mc') {
+                    answersText = q.answers.map((a, i) => i === q.correctIndex ? `*${a}` : a).join(', ');
+                } else {
+                    answersText = q.answers[0];
+                }
+                div.innerHTML = `
+                    <div>
+                        <strong>Q${idx+1} (${q.type}):</strong> ${q.question}<br>
+                        <strong>A:</strong> ${answersText}
+                    </div>
+                    <div>
+                        <button type="button" class="btn btn-warning" onclick="editQuestion(${idx})">Edit</button>
+                        <button type="button" class="btn btn-danger" onclick="removeQuestion(${idx})">Remove</button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+            // (image select removed; uploads attach to current question)
+            // Convert to text format
+            let text = '';
+            questions.forEach(q => {
+                text += q.question + '\n\n';
+                if (q.type === 'mc') {
+                    q.answers.forEach((ans, i) => {
+                        text += (i === q.correctIndex ? '*' : '') + ans + '\n';
+                    });
+                } else {
+                    text += q.answers[0] + '\n';
+                }
+                text += '\n';
+            });
+            document.getElementById('quiz_content').value = text.trim();
+        }
+
+        function editQuestion(idx) {
+            const q = questions[idx];
+            document.getElementById('question').value = q.question;
+            if (q.type === 'mc') {
+                document.querySelector('input[name="qtype"][value="mc"]').checked = true;
+                document.getElementById('mc-options').style.display = 'block';
+                document.getElementById('typein-option').style.display = 'none';
+                const container = document.getElementById('answers-container');
+                container.innerHTML = '';
+                q.answers.forEach((ans, i) => {
+                    const div = document.createElement('div');
+                    div.className = 'answer-input';
+                    div.innerHTML = `
+                        <input type="text" class="answer" placeholder="Answer ${i + 1}" value="${ans}">
+                        <input type="radio" name="correct" value="${i}" ${i === q.correctIndex ? 'checked' : ''}>
+                    `;
+                    container.appendChild(div);
+                });
+            } else {
+                document.querySelector('input[name="qtype"][value="typein"]').checked = true;
+                document.getElementById('mc-options').style.display = 'none';
+                document.getElementById('typein-option').style.display = 'block';
+                document.getElementById('typein-answer').value = q.answers[0];
+            }
+            editingIndex = idx;
+            document.getElementById('add-btn').textContent = 'Update Question';
+        }
+
+        function removeQuestion(idx) {
+            questions.splice(idx, 1);
+            updateQuestionsList();
+            if (editingIndex === idx) {
+                editingIndex = -1;
+                document.getElementById('add-btn').textContent = 'Add Question';
+                resetForm();
+            } else if (editingIndex > idx) {
+                editingIndex--;
+            }
+        }
+
+        function addAnswer() {
+            const container = document.getElementById('answers-container');
+            const answerCount = container.querySelectorAll('.answer-input').length;
+            const div = document.createElement('div');
+            div.className = 'answer-input';
+            div.innerHTML = `
+                <input type="text" class="answer" placeholder="Answer ${answerCount + 1}">
+                <input type="radio" name="correct" value="${answerCount}">
+            `;
+            container.appendChild(div);
+        }
+        
+            // (Old uploadImage removed; use uploadImageForCurrentQuestion instead)
+        
+            function addImagePreview(url, filename, questionIndex) {
+                    const preview = document.getElementById('image-preview');
+                    const div = document.createElement('div');
+                    div.className = 'image-preview-item';
+                    const meta = questionIndex !== undefined && questionIndex !== null ? `<div style="padding:6px; font-size:0.85em; color:#333;">Q${questionIndex+1}</div>` : '';
+                    div.innerHTML = `
+                        ${meta}
+                        <img src="${url}" alt="${filename}">
+                        <button type="button" class="remove-btn" onclick="this.parentElement.remove()">×</button>
+                    `;
+                    preview.appendChild(div);
+                }
+        
+            function showStatus(message, type) {
+                const statusDiv = document.getElementById('upload-status');
+                statusDiv.textContent = message;
+                statusDiv.className = `upload-status ${type}`;
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 4000);
+            }
+        
+            // Load existing images on page load
+            document.addEventListener('DOMContentLoaded', function() {
+                loadExistingImages();
+            });
+        
+            function loadExistingImages() {
+                const imageDir = `/UploadedImages/${encodeURIComponent(quizNameDisplay)}/`;
+                // Note: This would require a backend endpoint to list images
+                // For now, we'll leave the preview empty and let users upload new images
+            }
+    </script>
+</body>
+</html>

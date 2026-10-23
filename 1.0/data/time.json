@@ -8,13 +8,64 @@
       "Fill in the blank: _____ a gauche": "2.51"
     },
     "hello": {
-      "radnor": "3.52"
+      "radnor": "1.68"
     },
     "30_01_2026 french quiz": {
       "What is “Turn Right” in french": "1.13"
     },
     "French Quiz": {
       "Ok last question press true for free points": "0.95"
+    },
+    "foto test": {
+      "foto": "4.44",
+      "ayy": "3.51",
+      "aaaa": "3.68",
+      "aaaaa": "5.60"
+    },
+    "fotooooo": {
+      "foto": "4.83"
+    },
+    "Stardew Valley Quiz": {
+      "Which season is the Flower Dance held in?": "8.60",
+      "Which festival has everyone adding an ingredient to a potluck soup?": "3.10"
+    },
+    "Cooking Quiz 3": {
+      "Which cooking method is used to make confit?": "1.69"
+    },
+    "C++ Quiz": {
+      "Who invented C++?": "1.86"
+    },
+    "Common Knowledge Quiz": {
+      "How many continents are there?": "2.19"
+    },
+    "Sport": {
+      "Is sport fun": "1.40"
+    },
+    "Superheroes_radnor": {
+      "Is this Emmeline Pankhurst?": "2.80",
+      "False": "88.19",
+      "*Incredible Hulk": "12.88",
+      "Is WSPU voting in this picture?": "5.31",
+      "What is happening in this picture?": "3.92"
+    },
+    "LOGO": {
+      "Name this logo": "2.46",
+      "translate - we have blue eyes and brown hair": "5879.39"
+    },
+    "Christmas_quiz": {
+      "how many metro stations are there in Paris ?": "5.90",
+      "Mrs Piper is in her ……": "2.44",
+      "translate - we have blue eyes and brown hair": "3.09"
+    },
+    "Funny_cats": {
+      "Is this funny?": "8.85"
+    },
+    "Mario": {
+      "What year was Mario created?": "6.74",
+      "Who is game did Mario first appear in?": "12.22",
+      "What was Mario's name in Donkey Kong?": "5.90",
+      "What character is Mario's brother?": "7.95",
+      "About how many Mario games are there?": "39.73"
     }
   },
   "104.28.248.79": {
@@ -62,10 +113,56 @@
     },
     "Test Quiz": {
       "hayy": "1.70"
+    },
+    "Animated_GIFS_Team_Mode": {
+      "Watch closely for details in this GIF. You will need the info really soon. Work as a team!": "4.60",
+      "What colors was the cat in the previous GIF?": "8.53",
+      "How many ears did you see in the last GIF?": "7.36",
+      "What color was the pigs stick?": "274.55",
+      "How many green birds did you see in the last picture?": "2.91"
     }
   },
   "192.168.50.80": {
-    "French Quiz 2": {}
+    "French Quiz 2": {},
+    "Jazz": {
+      "How many pets do I have?": "2.19"
+    },
+    "Stardew Valley Quiz": {
+      "Which season is the Flower Dance held in?": "3.47",
+      "Which festival has everyone adding an ingredient to a potluck soup?": "1.97",
+      "Which festival has a Grange Display contest?": "5.23",
+      "Which festival features a haunted maze?": "2.75"
+    },
+    "secret": {
+      "bum bum": "3.35"
+    },
+    "Pusheen Quiz": {
+      "Who created the Pusheen character?": "3.40",
+      "In what year was Pusheen first created?": "2.29",
+      "What type of animal is Pusheen?": "2.98",
+      "What is Pusheen's signature color?": "0.94",
+      "How many siblings does Pusheen have?": "1.06",
+      "What is the name of Pusheen's best friend?": "0.95",
+      "What social media platform did Pusheen originally become famous on?": "1.04",
+      "What does Pusheen commonly eat in comics?": "1.01",
+      "What is Pusheen's favorite activity?": "1.03",
+      "In what country is Pusheen primarily created?": "2.17",
+      "What type of merchandise is Pusheen most known for?": "2.90",
+      "How many followers does Pusheen have on major social media?": "1.11",
+      "What is Pusheen's expression usually?": "0.63",
+      "Which streaming service has Pusheen content?": "2.17",
+      "What is a common pose of Pusheen in fan art?": "1.23",
+      "In what format has Pusheen appeared besides comics?": "1.09",
+      "What emotion does Pusheen typically convey?": "1.00",
+      "How often does Pusheen post on social media?": "4.58",
+      "What is Pusheen's most iconic catchphrase or expression?": "2.66"
+    },
+    "Couch Quiz": {
+      "What is another common name for a couch?": "5.86"
+    },
+    "Cooking Quiz 2": {
+      "What cooking technique involves cooking food in a small amount of fat over moderate heat?": "27.29"
+    }
   },
   "192.168.50.6": {},
   "62.64.192.134": {
@@ -111,7 +208,70 @@
       "Fill in the blank: _____ a gauche": "26.25"
     },
     "quiz for lucas": {
-      "Which Minecraft file type is used to define custom item models?": "3.92"
+      "Which Minecraft file type is used to define custom item models?": "4.83",
+      "What is the core design philosophy behind Command Maker?": "7.19",
+      "Which tool is commonly used to test API endpoints during dashboard development?": "4.14",
+      "What Windows command is used to map a network drive?": "7.97",
+      "Which Minecraft folder stores resource pack sounds?": "5.37",
+      "What is the main advantage of a local-first workflow?": "1.30"
+    },
+    "Gettery quiz": {
+      "Does daddy like spagetti": "1.92",
+      "Who owns the window couch (yes I took this from Best Quiz)": "3.45",
+      "What's the window couch's name": "7.36",
+      "Did daddy use to play Zelda with julie": "3.08",
+      "Daddy likes sausyges": "2.70",
+      "Does mama like Instagram or reddit more": "5.96",
+      "What does mama not like": "4.26",
+      "Who likes La Sausyges": "1.95"
+    },
+    "Blank 4": {
+      "Fill in the blank: _____ a gauche": "2.18"
+    },
+    "Jazz": {
+      "How many pets do I have?": "3.13",
+      "Do I like cats or dogs": "4.88",
+      "How old am I": "5.05",
+      "How may points will I give for this question": "93.83"
+    },
+    "hello": {
+      "radnor": "2.59"
+    },
+    "Common Knowledge Quiz 2": {
+      "What is the capital of France?": "2.81",
+      "In what year did the Titanic sink?": "2.04",
+      "What is the largest planet in our solar system?": "1.37",
+      "Who painted the Mona Lisa?": "1.06",
+      "What is the chemical symbol for gold?": "2.05",
+      "How many continents are there?": "1.30"
+    },
+    "Pusheen Quiz": {
+      "Who created the Pusheen character?": "3.05",
+      "In what year was Pusheen first created?": "2.78",
+      "What type of animal is Pusheen?": "1.98",
+      "What is Pusheen's signature color?": "2.89",
+      "How many siblings does Pusheen have?": "2.36",
+      "What is the name of Pusheen's best friend?": "1.45",
+      "What social media platform did Pusheen originally become famous on?": "1.93",
+      "What does Pusheen commonly eat in comics?": "1.90",
+      "What is Pusheen's favorite activity?": "1.26",
+      "In what country is Pusheen primarily created?": "2.57",
+      "What type of merchandise is Pusheen most known for?": "7.54",
+      "How many followers does Pusheen have on major social media?": "4.18",
+      "What is Pusheen's expression usually?": "3.94",
+      "Which streaming service has Pusheen content?": "2.63",
+      "What is a common pose of Pusheen in fan art?": "2.51",
+      "In what format has Pusheen appeared besides comics?": "1.20"
+    }
+  },
+  "192.168.50.77": {
+    "Stardew Valley Quiz": {
+      "Unknown Question": "5.09"
+    }
+  },
+  "81.147.22.112": {
+    "Nintendo_Quiz": {
+      "Which of the following are not made by Nintendo.": "3.96"
     }
   }
 }

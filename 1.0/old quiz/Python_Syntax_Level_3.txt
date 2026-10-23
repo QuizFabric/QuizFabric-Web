@@ -1,0 +1,139 @@
+Which command will display the text 'Hello world!' on the screen?
+
+print(Hello world!)
+print "Hello world!"
+*print("Hello world!")
+print = "Hello world!"
+
+Which command will correctly ask the user for their name?
+
+input("How old are you?") = age
+age = input(How old are you?)
+*age = input("How old are you?")
+How old are you = input()
+
+I want to add 3 to the value stored in the variable 'price'. Which one of these will do it?
+
+price + 3 = price
+*price += 3
+*price = price + 3
+add(price, 3)
+
+Which function will convert a number to a string?
+
+int()
+ord()
+*str()
+chr()
+
+What is the result of this command? "5" + "3"
+
+8
+"8"
+*"53"
+"5+3"
+
+Which function will convert a character to a number that is the character's ASCII code?
+
+int()
+*ord()
+str()
+chr()
+
+7 * "5" would result in?
+
+35
+"35"
+A runtime error.
+*"5555555"
+
+What is a semantic error?
+
+Occurs when an unexpected input is received.
+Occurs because of an invalid command.
+*The program doesn't produce the correct output.
+The code isn't finished and stops before the task completes.
+
+Which function will convert a string containing only digits into a number?
+
+*int()
+ord()
+str()
+chr()
+
+Which of these loops will count from 1 to 10?
+
+for x in range(10):
+for x in range(1,10):
+*for x inrange(1,11):
+for x in range(11):
+
+"7" + 2 will result in what?
+
+"72"
+*A runtime error.
+A syntax error.
+"9"
+
+Which decision statement will be triggered if the variable x is less than 20?
+
+if x > 20:
+if x <> 20:
+if x == 20:
+*if x < 20:
+
+I want to extract 'cat' from 'Communicate'. Which of these slice operations will do it?
+
+"Communicate"[7:11]
+*"Communicate"[7:10]
+"Communicate"[6][9]
+"Communicate"[6:10]
+
+One of these loop commands has a syntax error. Which one?
+
+for x in range(10):
+*while True
+for x in range(4,12):
+while x <= 100:
+
+Which of these tests whether the variable x is the same as 'Hello'?
+
+x = "Hello"
+*x == "Hello"
+x != "Hello"
+x <> "Hello"
+
+What is a syntax error?
+
+Occurs when an unexpected input is received.
+*Occurs because of an invalid command.
+The program doesn't produce the correct output.
+The code isn't finished and stops before the task completes.
+
+Choose a valid representation of a string.
+
+*"Hello world!"
+#Hello world!#
+[Hello world!]
+*'Hello world!'
+
+What effect does the # character have?
+
+Tells Python that this is a really important line of code.
+*Tells Python to ignore the rest of the line.
+Tells Python to tweet when this line of code gets run.
+It does nothing, Python ignores this character.
+
+When do runtime errors occur?
+
+*Occurs when an unexpected input is received.
+Occurs because of an invalid command.
+The program doesn't produce the correct output.
+The code isn't finished and stops before the task completes.
+
+Which subroutine has been correctly defined?
+
+def(adding):
+def adding:
+*def adding():
+def: adding()

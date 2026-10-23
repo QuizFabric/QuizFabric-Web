@@ -23,23 +23,21 @@
             z-index: 1000;
             opacity: 0.9;
         }
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            margin: 0;
-            padding: 0;
-        }
         .editquiz-container {
             max-width: 800px;
             margin: 20px auto;
-            background: #fff;
+            background: rgba(255, 255, 255, 0.18);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            box-shadow: 0 10px 30px rgba(40, 8, 60, 0.35);
         }
         h1 {
-            color: #333;
+            color: #fff;
             text-align: center;
+            text-shadow: 0 2px 8px rgba(40, 8, 60, 0.6);
         }
         .form-group {
             margin-bottom: 15px;
@@ -110,17 +108,18 @@
         }
         .question-list {
             margin-top: 20px;
-            border: 1px solid #ddd;
+            border: 1px solid rgba(255, 255, 255, 0.25);
             padding: 10px;
-            background: #f9f9f9;
-            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.18);
+            border-radius: 12px;
         }
         .question-item {
             padding: 10px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            color: #fff;
         }
         .question-item:last-child {
             border-bottom: none;
@@ -147,54 +146,30 @@
                 margin-bottom: 5px;
             }
         }
-            // Image upload functions - upload for current question (edit mode)
-            async function uploadImageForCurrentQuestion() {
-                const fileInput = document.getElementById('image-input');
-                if (!fileInput.files.length) {
-                    showStatus('Please select at least one image file', 'error');
-                    return;
-                }
-
-                // Determine target question index: editingIndex if editing, otherwise next index (when adding)
-                const targetIndex = (typeof editingIndex === 'number' && editingIndex >= 0) ? editingIndex : questions.length;
-
-                for (const file of fileInput.files) {
-                    const formData = new FormData();
-                    formData.append('image', file);
-                    formData.append('question_index', String(targetIndex));
-
-                    try {
-                                console.log('Uploading', file.name, 'for quiz', quizNameDisplay, 'questionIndex', targetIndex);
-                                const response = await fetch(`/upload_quiz_image/${encodeURIComponent(quizNameDisplay)}`, {
-                                    method: 'POST',
-                                    body: formData
-                                });
-                                console.log('Fetch returned', response.status, response.statusText);
-                        let data = null;
-                        try {
-                            data = await response.json();
-                        } catch (err) {
-                            // Response was not JSON (likely an HTML error page). Show raw text limited.
-                                    const text = await response.text();
-                                    const preview = text.substring(0, 1000);
-                                    console.error('Non-JSON upload response:', response.status, preview);
-                                    showStatus(`✗ Error uploading ${file.name}: HTTP ${response.status} - see console`, 'error');
-                            continue;
-                        }
-                        if (response.ok) {
-                            showStatus(`✓ Uploaded: ${file.name}`, 'success');
-                            addImagePreview(data.url, file.name, targetIndex);
-                        } else {
-                            const errMsg = data && data.error ? data.error : JSON.stringify(data);
-                            showStatus(`✗ Error uploading ${file.name}: ${errMsg}`, 'error');
-                        }
-                    } catch (error) {
-                        showStatus(`✗ Error uploading ${file.name}: ${error.message}`, 'error');
-                    }
-                }
-
-                fileInput.value = '';
+            .image-preview {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 10px;
+                margin-top: 15px;
             }
+            .image-preview-item {
+                position: relative;
+                border: 2px solid #ddd;
+                border-radius: 4px;
+                overflow: hidden;
+                background: white;
+            }
+            .image-preview-item img {
+                width: 100%;
+                height: 150px;
+                object-fit: cover;
+            }
+            .image-preview-item .remove-btn {
+                position: absolute;
+                top: 5px;
+                right: 5px;
+                background: red;
+                color: white;
                 border: none;
                 border-radius: 50%;
                 width: 25px;
@@ -234,9 +209,13 @@
 
             <div class="image-upload-section">
                 <h3>📸 Quiz Images</h3>
-                <p style="color: #666; margin: 10px 0;">Supported formats: PNG, WebP, JPG, JPEG | Max file size: 300MB | Max 20 images per quiz</p>
+                <p style="color: rgba(255, 255, 255, 0.75); margin: 10px 0;">Supported formats: PNG, WebP, JPG, JPEG | Max file size: 300MB | Max 20 images per quiz</p>
                 <input type="file" id="image-input" accept=".png,.webp,.jpg,.jpeg" multiple>
                 <button type="button" onclick="uploadImageForCurrentQuestion()" class="btn btn-primary" style="margin-top: 10px;">Upload Images For Current Question</button>
+                <div style="margin-top: 10px;">
+                    <input type="url" id="image-url-input" placeholder="Or paste an image URL (https://...)" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; margin-bottom: 5px;">
+                    <button type="button" onclick="uploadImageFromUrl()" class="btn btn-primary">Add Image From URL</button>
+                </div>
                 <div id="upload-status" class="upload-status"></div>
                 <div id="image-preview" class="image-preview"></div>
             </div>
@@ -262,6 +241,8 @@
                         <div class="question-type">
                             <label><input type="radio" name="qtype" value="mc" checked> Multiple Choice</label>
                             <label><input type="radio" name="qtype" value="typein"> Type-in Answer</label>
+                            <label><input type="radio" name="qtype" value="slider"> Slider</label>
+                            <label><input type="radio" name="qtype" value="puzzle"> Puzzle (Ordering)</label>
                         </div>
                     </div>
 
@@ -291,6 +272,21 @@
                     <div id="typein-option" class="form-group" style="display: none;">
                         <label for="typein-answer">Correct Answer:</label>
                         <input type="text" id="typein-answer" placeholder="Enter the correct answer">
+                    </div>
+
+                    <div id="slider-option" class="form-group" style="display: none;">
+                        <label>Slider Range:</label>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                            <input type="number" id="slider-min" placeholder="Min" step="any" style="flex:1; min-width:100px;">
+                            <input type="number" id="slider-max" placeholder="Max" step="any" style="flex:1; min-width:100px;">
+                            <input type="number" id="slider-answer" placeholder="Correct answer" step="any" style="flex:1; min-width:100px;">
+                            <input type="number" id="slider-tolerance" placeholder="Tolerance (optional)" step="any" style="flex:1; min-width:100px;">
+                        </div>
+                    </div>
+
+                    <div id="puzzle-option" class="form-group" style="display: none;">
+                        <label for="puzzle-answers">Answers in the correct order (one per line):</label>
+                        <textarea id="puzzle-answers" rows="4" placeholder="First step&#10;Second step&#10;Third step"></textarea>
                     </div>
 
                     <button type="button" class="btn" id="add-btn" onclick="addQuestion()">Add Question</button>
@@ -405,52 +401,59 @@
             document.getElementById('modern-editor').style.display = 'block';
             document.getElementById('legacy-editor').style.display = 'none';
             document.getElementById('use_legacy').value = 'false';
-            // Attempt a best-effort parse for modern preview without altering original content: do a non-destructive parse
-            const blocks = content.split(/\n\s*\n+/);
+
+            // The QuizFabric server format: blocks separated by blank lines,
+            // alternating question block / answers block. Parse it that way.
+            const blocks = content.split(/\n\s*\n+/).map(b => b.trim()).filter(b => b);
             const parsedQuestions = [];
-            blocks.forEach(block => {
-                // Split and preserve original spacing for legacy textarea, but use trimmed lines for parsing
-                const rawLines = block.split('\n').map(l => l.replace(/\r$/, ''));
-                const lines = rawLines.map(l => l === undefined ? '' : l);
-                if (lines.length === 0) return;
+            for (let bi = 0; bi + 1 < blocks.length; bi += 2) {
+                const question = blocks[bi];
+                const answerLines = blocks[bi + 1].split('\n')
+                    .map(l => l.trim()).filter(l => l);
+                if (!question || !answerLines.length) continue;
 
-                // Pick the question as the first non-empty line that does NOT look like an answer (doesn't start with '*')
-                let questionLineIndex = -1;
-                for (let k = 0; k < lines.length; k++) {
-                    const t = (lines[k] || '').trim();
-                    if (!t) continue;
-                    if (!t.startsWith('*')) {
-                        questionLineIndex = k;
-                        break;
+                // Tagged question types: [SLIDER] and [PUZZLE]
+                if (question.startsWith('[SLIDER]')) {
+                    const qText = question.substring(8).trim();
+                    const min = parseFloat(answerLines[0]);
+                    const max = parseFloat(answerLines[1]);
+                    let answer = null;
+                    let tolerance = 0;
+                    for (const line of answerLines) {
+                        if (line.startsWith('*')) answer = parseFloat(line.substring(1).trim());
+                        if (line.startsWith('~')) tolerance = parseFloat(line.substring(1).trim());
                     }
+                    if (qText && !isNaN(min) && !isNaN(max) && answer !== null) {
+                        parsedQuestions.push({question: qText, answers: [], correctIndex: -1, type: 'slider', min, max, answer, tolerance: tolerance || 0});
+                    }
+                    continue;
                 }
-                // If all lines start with '*' or we didn't find a non-answer, fall back to first line
-                if (questionLineIndex === -1) questionLineIndex = 0;
+                if (question.startsWith('[PUZZLE]')) {
+                    const qText = question.substring(8).trim();
+                    if (qText && answerLines.length >= 2) {
+                        parsedQuestions.push({question: qText, answers: answerLines, correctIndex: -1, type: 'puzzle'});
+                    }
+                    continue;
+                }
 
-                const question = (lines[questionLineIndex] || '').trim();
                 const answers = [];
                 let correctIndex = -1;
                 let type = 'typein';
-                for (let i = 0; i < lines.length; i++) {
-                    if (i === questionLineIndex) continue;
-                    const raw = lines[i];
-                    if (raw === undefined) continue;
-                    const line = raw.trim();
-                    if (!line) continue;
-                    let ans = line;
-                    if (ans.startsWith('*')) {
-                        ans = ans.substring(1).trim();
-                        correctIndex = answers.length;
+                for (const line of answerLines) {
+                    if (line.startsWith('*')) {
+                        answers.push(line.substring(1).trim());
+                        correctIndex = answers.length - 1;
                         type = 'mc';
+                    } else {
+                        answers.push(line);
                     }
-                    answers.push(ans.trim());
                 }
-                if (type === 'mc' && answers.length > 1) {
+                if (type === 'mc' && answers.length >= 2) {
                     parsedQuestions.push({question, answers, correctIndex, type});
                 } else if (type === 'typein' && answers.length === 1) {
                     parsedQuestions.push({question, answers, correctIndex: 0, type});
                 }
-            });
+            }
             if (parsedQuestions.length) {
                 // Populate a best-effort modern preview but keep legacy editor content intact
                 questions = parsedQuestions;
@@ -462,18 +465,18 @@
         }
 
         document.addEventListener("DOMContentLoaded", function() {
+            {% autoescape false %}
             const initialContent = `{{ quiz_content | replace('\\', '\\\\') | replace('`', '\\`') | replace('${', '\\${') }}`;
+            {% endautoescape %}
             parseQuizContent(initialContent);
 
             document.querySelectorAll('input[name="qtype"]').forEach(radio => {
                 radio.addEventListener('change', function() {
-                    if (this.value === 'mc') {
-                        document.getElementById('mc-options').style.display = 'block';
-                        document.getElementById('typein-option').style.display = 'none';
-                    } else {
-                        document.getElementById('mc-options').style.display = 'none';
-                        document.getElementById('typein-option').style.display = 'block';
-                    }
+                    const type = this.value;
+                    document.getElementById('mc-options').style.display = type === 'mc' ? 'block' : 'none';
+                    document.getElementById('typein-option').style.display = type === 'typein' ? 'block' : 'none';
+                    document.getElementById('slider-option').style.display = type === 'slider' ? 'block' : 'none';
+                    document.getElementById('puzzle-option').style.display = type === 'puzzle' ? 'block' : 'none';
                 });
             });
         });
@@ -483,6 +486,7 @@
             const qtype = document.querySelector('input[name="qtype"]:checked').value;
             let answers = [];
             let correctIndex = -1;
+            let sliderMin = null, sliderMax = null, sliderAnswer = null, sliderTolerance = 0;
 
             if (qtype === 'mc') {
                 answers = Array.from(document.querySelectorAll('.answer')).map(input => input.value.trim()).filter(val => val);
@@ -490,6 +494,21 @@
                 if (correctRadio) correctIndex = parseInt(correctRadio.value);
                 if (answers.length < 2 || correctIndex === -1 || correctIndex >= answers.length) {
                     alert('Please enter at least 2 answers and select the correct one.');
+                    return;
+                }
+            } else if (qtype === 'slider') {
+                sliderMin = parseFloat(document.getElementById('slider-min').value);
+                sliderMax = parseFloat(document.getElementById('slider-max').value);
+                sliderAnswer = parseFloat(document.getElementById('slider-answer').value);
+                sliderTolerance = parseFloat(document.getElementById('slider-tolerance').value);
+                if (isNaN(sliderMin) || isNaN(sliderMax) || isNaN(sliderAnswer)) {
+                    alert('Please enter a minimum, maximum, and correct answer for the slider.');
+                    return;
+                }
+            } else if (qtype === 'puzzle') {
+                answers = document.getElementById('puzzle-answers').value.split('\n').map(s => s.trim()).filter(s => s);
+                if (answers.length < 2) {
+                    alert('Please enter at least 2 answers in the correct order.');
                     return;
                 }
             } else {
@@ -507,12 +526,19 @@
                 return;
             }
 
+            const qobj = {question, answers, correctIndex, type: qtype};
+            if (qtype === 'slider') {
+                qobj.min = sliderMin;
+                qobj.max = sliderMax;
+                qobj.answer = sliderAnswer;
+                qobj.tolerance = isNaN(sliderTolerance) ? 0 : sliderTolerance;
+            }
             if (editingIndex >= 0) {
-                questions[editingIndex] = {question, answers, correctIndex, type: qtype};
+                questions[editingIndex] = qobj;
                 editingIndex = -1;
                 document.getElementById('add-btn').textContent = 'Add Question';
             } else {
-                questions.push({question, answers, correctIndex, type: qtype});
+                questions.push(qobj);
             }
             updateQuestionsList();
             resetForm();
@@ -523,6 +549,11 @@
             document.querySelectorAll('.answer').forEach(input => input.value = '');
             document.querySelectorAll('input[name="correct"]').forEach(radio => radio.checked = false);
             document.getElementById('typein-answer').value = '';
+            document.getElementById('slider-min').value = '';
+            document.getElementById('slider-max').value = '';
+            document.getElementById('slider-answer').value = '';
+            document.getElementById('slider-tolerance').value = '';
+            document.getElementById('puzzle-answers').value = '';
         }
 
         function updateQuestionsList() {
@@ -534,6 +565,10 @@
                 let answersText;
                 if (q.type === 'mc') {
                     answersText = q.answers.map((a, i) => i === q.correctIndex ? `*${a}` : a).join(', ');
+                } else if (q.type === 'slider') {
+                    answersText = `${q.answer} (range ${q.min}–${q.max}${q.tolerance ? `, ±${q.tolerance}` : ''})`;
+                } else if (q.type === 'puzzle') {
+                    answersText = q.answers.join(' → ');
                 } else {
                     answersText = q.answers[0];
                 }
@@ -553,6 +588,21 @@
             // Convert to text format
             let text = '';
             questions.forEach(q => {
+                if (q.type === 'slider') {
+                    text += '[SLIDER]' + q.question + '\n\n';
+                    text += q.min + '\n' + q.max + '\n*' + q.answer + '\n';
+                    if (q.tolerance) text += '~' + q.tolerance + '\n';
+                    text += '\n';
+                    return;
+                }
+                if (q.type === 'puzzle') {
+                    text += '[PUZZLE]' + q.question + '\n\n';
+                    q.answers.forEach(ans => {
+                        text += ans + '\n';
+                    });
+                    text += '\n';
+                    return;
+                }
                 text += q.question + '\n\n';
                 if (q.type === 'mc') {
                     q.answers.forEach((ans, i) => {
@@ -569,10 +619,13 @@
         function editQuestion(idx) {
             const q = questions[idx];
             document.getElementById('question').value = q.question;
+            document.getElementById('mc-options').style.display = 'none';
+            document.getElementById('typein-option').style.display = 'none';
+            document.getElementById('slider-option').style.display = 'none';
+            document.getElementById('puzzle-option').style.display = 'none';
             if (q.type === 'mc') {
                 document.querySelector('input[name="qtype"][value="mc"]').checked = true;
                 document.getElementById('mc-options').style.display = 'block';
-                document.getElementById('typein-option').style.display = 'none';
                 const container = document.getElementById('answers-container');
                 container.innerHTML = '';
                 q.answers.forEach((ans, i) => {
@@ -584,9 +637,19 @@
                     `;
                     container.appendChild(div);
                 });
+            } else if (q.type === 'slider') {
+                document.querySelector('input[name="qtype"][value="slider"]').checked = true;
+                document.getElementById('slider-option').style.display = 'block';
+                document.getElementById('slider-min').value = q.min;
+                document.getElementById('slider-max').value = q.max;
+                document.getElementById('slider-answer').value = q.answer;
+                document.getElementById('slider-tolerance').value = q.tolerance || '';
+            } else if (q.type === 'puzzle') {
+                document.querySelector('input[name="qtype"][value="puzzle"]').checked = true;
+                document.getElementById('puzzle-option').style.display = 'block';
+                document.getElementById('puzzle-answers').value = q.answers.join('\n');
             } else {
                 document.querySelector('input[name="qtype"][value="typein"]').checked = true;
-                document.getElementById('mc-options').style.display = 'none';
                 document.getElementById('typein-option').style.display = 'block';
                 document.getElementById('typein-answer').value = q.answers[0];
             }
@@ -641,7 +704,84 @@
                     statusDiv.style.display = 'none';
                 }, 4000);
             }
-        
+
+            // Upload files for the current question (or next question when adding)
+            async function uploadImageForCurrentQuestion() {
+                const fileInput = document.getElementById('image-input');
+                if (!fileInput.files.length) {
+                    showStatus('Please select at least one image file', 'error');
+                    return;
+                }
+
+                // Determine target question index: editingIndex if editing, otherwise next index (when adding)
+                const targetIndex = (typeof editingIndex === 'number' && editingIndex >= 0) ? editingIndex : questions.length;
+
+                for (const file of fileInput.files) {
+                    const formData = new FormData();
+                    formData.append('image', file);
+                    formData.append('question_index', String(targetIndex));
+
+                    try {
+                        const response = await fetch(`/upload_quiz_image/${encodeURIComponent(quizNameDisplay)}`, {
+                            method: 'POST',
+                            body: formData
+                        });
+                        let data = null;
+                        try {
+                            data = await response.json();
+                        } catch (err) {
+                            console.error('Non-JSON upload response:', response.status);
+                            showStatus(`✗ Error uploading ${file.name}: HTTP ${response.status} - see console`, 'error');
+                            continue;
+                        }
+                        if (response.ok) {
+                            showStatus(`✓ Uploaded: ${file.name}`, 'success');
+                            addImagePreview(data.url, file.name, targetIndex);
+                        } else {
+                            const errMsg = data && data.error ? data.error : JSON.stringify(data);
+                            showStatus(`✗ Error uploading ${file.name}: ${errMsg}`, 'error');
+                        }
+                    } catch (error) {
+                        showStatus(`✗ Error uploading ${file.name}: ${error.message}`, 'error');
+                    }
+                }
+
+                fileInput.value = '';
+            }
+
+            // Download an image from a pasted URL for the current question
+            async function uploadImageFromUrl() {
+                const urlInput = document.getElementById('image-url-input');
+                const imageUrl = urlInput.value.trim();
+
+                if (!imageUrl) {
+                    showStatus('Please enter an image URL', 'error');
+                    return;
+                }
+
+                const targetIndex = (typeof editingIndex === 'number' && editingIndex >= 0) ? editingIndex : questions.length;
+
+                try {
+                    const response = await fetch(`/upload_quiz_image_url/${encodeURIComponent(quizNameDisplay)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image_url: imageUrl, question_index: String(targetIndex) })
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                        showStatus(`✓ Added from URL: ${data.filename}`, 'success');
+                        addImagePreview(data.url, data.filename, targetIndex);
+                    } else {
+                        const errMsg = data && data.error ? data.error : JSON.stringify(data);
+                        showStatus(`✗ Error adding from URL: ${errMsg}`, 'error');
+                    }
+                } catch (error) {
+                    showStatus(`✗ Error adding from URL: ${error.message}`, 'error');
+                }
+
+                urlInput.value = '';
+            }
+
             // Load existing images on page load
             document.addEventListener('DOMContentLoaded', function() {
                 loadExistingImages();

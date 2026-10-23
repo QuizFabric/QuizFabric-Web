@@ -5,3 +5,4 @@ gunicorn[gevent]
 python-dotenv
 colorama
 requests
+gevent-websocket
