@@ -38,27 +38,41 @@ run_production.bat
 
 ### Before Going Live
 
-1. **Update Secret Key**
-   - Replace `SECRET_KEY` in `.env.production` with a secure random key
-   - Use: `python -c "import secrets; print(secrets.token_hex(32))"`
+1. **Configure Session Security**
+   - Set `FLASK_SECRET_KEY` in `.env.production` to a secure random value shared by every worker.
+   - Generate one with: `python -c "import secrets; print(secrets.token_hex(32))"`
+   - If it is not configured, the app creates and reuses `data/session_secret.key`. Keep that file private and persistent across restarts.
 
-2. **Set Environment Variable**
+2. **Configure Account Registration**
+   - The app requires a registered account for pages, APIs, quiz actions, and Socket.IO connections.
+   - Usernames are unique, passwords are stored as password hashes, and registration is limited to one attempt per source IP per day.
+   - The public `/join` page and player connections remain available to unauthenticated quiz participants; hosting or controlling a game still requires login.
+   - Registration throttling uses the direct connection address and does not trust `X-Forwarded-For`; this expects Cloudflare DNS-only mode, not a proxy.
+   - Account records are stored in `data/logins.json`; this file and its lock file are gitignored and must be backed up privately.
+   - The persistent login is a 30-day `HttpOnly`, `Secure`, `SameSite=Lax` cookie. HTTPS is required.
+
+3. **Configure the Administrator (Optional)**
+   - Set both `QUIZFABRIC_ADMIN_USERNAME` and a strong `QUIZFABRIC_ADMIN_PASSWORD` before registering the administrator account.
+   - The configured username is reserved; the matching configured password is required to register it with administrator privileges.
+   - Only that account can access IP management, logs, and other administrator endpoints.
+
+4. **Set Environment Variable**
    - `set FLASK_ENV=production`
    - Or use `.env.production` file
 
-3. **Install Dependencies**
+5. **Install Dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Enable HTTPS**
+6. **Enable HTTPS**
    - Configure with reverse proxy (nginx/Apache)
    - Use SSL/TLS certificates
 
-5. **Configure Logging**
+7. **Configure Logging**
    - Redirect logs to a file: `gunicorn ... --access-logfile access.log --error-logfile error.log`
 
-6. **Performance Tuning**
+8. **Performance Tuning**
    - Adjust `--workers` based on CPU cores: `(2 × CPU_cores) + 1`
    - Current config: 4 workers
 

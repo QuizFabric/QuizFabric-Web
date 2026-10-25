@@ -22,8 +22,8 @@ ACME_WEBROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "certbot
 # The whole app (Flask + Socket.IO websockets) as one WSGI callable. Both
 # servers below share this SAME object, so HTTPS players on 443 and the
 # plain-HTTP 3DS consoles on 80 play the same games in one process.
-from flask_socketio import _SocketIOMiddleware
-sio_app = _SocketIOMiddleware(socketio.server, app)
+from socketio import WSGIApp
+sio_app = WSGIApp(socketio.server, app)
 
 def _dispatch_plain(env, start_response):
     """Port 80 entry: serve the ACME challenge for certbot renewals, pass

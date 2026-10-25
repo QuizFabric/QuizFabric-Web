@@ -14,8 +14,10 @@ import io
 import shutil
 import urllib.parse
 import urllib.request
+import secrets
 
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for, send_file
+from flask import Flask, abort, render_template, jsonify, request, session as flask_session, redirect, url_for, send_file
+from werkzeug.security import check_password_hash
 
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
@@ -28,7 +30,17 @@ except ImportError:
 
 from non_static.quiz import read_quiz, get_random_question, validate_answer, correct_answer_text, question_payload  # adjust imports as needed
 
-from non_static.utils import read_uploaded_json, write_uploaded_json
+from non_static.utils import read_uploaded_json
+from non_static.accounts import (
+    AccountValidationError,
+    RegistrationRateLimitError,
+    add_owned_quiz,
+    get_account,
+    get_owned_quizzes,
+    register_account,
+    remove_owned_quiz,
+    rename_owned_quiz,
+)
 
 try:
     from colorama import init, Fore, Back, Style
@@ -38,7 +50,38 @@ except ImportError:
     COLORAMA_AVAILABLE = False
 
 app = Flask(__name__, template_folder="templates")
-app.secret_key = "your_random_secret_key_here"
+
+
+def _load_session_secret():
+    configured_key = os.environ.get("FLASK_SECRET_KEY")
+    if configured_key:
+        return configured_key
+
+    key_path = os.path.join(os.path.dirname(__file__), "data", "session_secret.key")
+    os.makedirs(os.path.dirname(key_path), exist_ok=True)
+    try:
+        with open(key_path, "x", encoding="utf-8") as key_file:
+            key = secrets.token_hex(32)
+            key_file.write(key)
+            key_file.flush()
+            os.chmod(key_path, 0o600)
+            return key
+    except FileExistsError:
+        while not os.path.getsize(key_path):
+            time.sleep(0.05)
+        with open(key_path, "r", encoding="utf-8") as key_file:
+            return key_file.read().strip()
+
+
+app.secret_key = _load_session_secret()
+app.config.update(
+    SESSION_COOKIE_NAME="quizfabric_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=30),
+)
+ACCOUNT_STORE = os.path.join(os.path.dirname(__file__), "data", "logins.json")
 
 socketio = SocketIO(app, async_mode='gevent')
 
@@ -152,8 +195,7 @@ logger.addHandler(file_handler)
 logger.info("QuizFabric server starting up...")
 
 def get_client_ip():
-    forwarded_for = request.headers.get('X-Forwarded-For')
-    return forwarded_for.split(",")[0].strip() if forwarded_for else request.remote_addr
+    return request.remote_addr or "unknown"
 
 def is_mobile():
     user_agent = request.headers.get('User-Agent', '').lower()
@@ -164,6 +206,125 @@ def is_mobile():
 def before_request():
     log_connection()
     track_page()
+
+
+@app.before_request
+def require_account():
+    public_endpoints = {
+        "login", "register", "static", "robots", "get_avatars",
+        "get_avatar_image", "get_icon", "acme_challenge", "join_game",
+        "api_searchkahoot", "get_quiz_data", "list_quizzes",
+        "api_quizbanner", "api_kahootcover",
+    }
+    admin_endpoints = {
+        "ban_ip", "unban_ip", "log_command", "kick", "gui_data",
+        "gui_action", "view_logs", "logs_content", "view_times",
+        "view_times_file",
+    }
+    if (request.endpoint in public_endpoints
+            or request.path.startswith("/.well-known/acme-challenge/")):
+        return None
+    username = flask_session.get("username")
+    account = get_account(ACCOUNT_STORE, username) if username else None
+    if account:
+        if request.endpoint in admin_endpoints and account.get("role") != "admin":
+            return jsonify({"error": "Administrator access required"}), 403
+        return None
+    flask_session.clear()
+    if request.path.startswith("/api/") or request.is_json:
+        return jsonify({"error": "Authentication required"}), 401
+    return redirect(url_for("login", next=request.full_path.rstrip("?")))
+
+
+def _safe_next_url(target):
+    if (target and target.startswith("/") and not target.startswith("//")
+            and "\\" not in target and "\r" not in target and "\n" not in target):
+        return target
+    return url_for("home")
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    message = None
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        password_confirmation = request.form.get("password_confirmation", "")
+        legacy_quizzes = read_uploaded_json().get(get_client_ip(), [])
+        admin_username = os.environ.get("QUIZFABRIC_ADMIN_USERNAME", "").strip().lower()
+        admin_password = os.environ.get("QUIZFABRIC_ADMIN_PASSWORD")
+        try:
+            account_name = register_account(
+                ACCOUNT_STORE, get_client_ip(), username, password,
+                legacy_quizzes=[os.path.splitext(q)[0] for q in legacy_quizzes],
+                admin_username=admin_username, admin_password=admin_password,
+                password_confirmation=password_confirmation)
+        except RegistrationRateLimitError as error:
+            message = str(error)
+            status_code = 429
+        except AccountValidationError as error:
+            message = str(error)
+            status_code = 400
+        else:
+            flask_session.clear()
+            flask_session["username"] = account_name
+            flask_session.permanent = True
+            logger.info(f"Registered account '{account_name}'")
+            return redirect(_safe_next_url(
+                request.args.get("next") or request.form.get("next")))
+
+    return render_template(
+        "account.html", mode="register", message=message,
+            next_url=request.args.get("next", "")), (status_code if message else 200)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    message = None
+    next_url = request.args.get("next") or request.form.get("next", "")
+    if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
+        password = request.form.get("password", "")
+        account = get_account(ACCOUNT_STORE, username)
+        if (account and len(password) <= 128
+                and check_password_hash(account.get("password_hash", ""), password)):
+            flask_session.clear()
+            flask_session["username"] = username
+            flask_session.permanent = True
+            logger.info(f"Account '{username}' logged in")
+            return redirect(_safe_next_url(next_url))
+        message = "Incorrect username or password."
+
+    return render_template(
+        "account.html", mode="login", message=message, next_url=next_url)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    flask_session.clear()
+    return redirect(url_for("login"))
+
+
+def _canonical_quiz_name(name):
+    return name[:-4] if name.endswith(".txt") else name
+
+
+def _safe_quiz_name(name):
+    return bool(name and name not in {".", ".."}
+                and "/" not in name and "\\" not in name and "\0" not in name)
+
+
+def _owns_quiz(name):
+    if not _safe_quiz_name(name):
+        return False
+    return _canonical_quiz_name(name) in get_owned_quizzes(
+        ACCOUNT_STORE, flask_session["username"])
+
+
+def _socket_has_account():
+    username = flask_session.get("username")
+    return bool(username and get_account(ACCOUNT_STORE, username))
+
 
 def log_connection():
     ip = get_client_ip()
@@ -344,19 +505,8 @@ def home():
                 if file.endswith(".txt"):
                     quiz_name = os.path.splitext(file)[0]
                     quizzes.append(quiz_name)
-        # Load uploaded quizzes for current IP
-        uploaded_file = os.path.join(os.path.dirname(__file__), "data", "uploaded.json")
-        user_uploaded = []
-        ip = get_client_ip()
-        if os.path.exists(uploaded_file):
-            with open(uploaded_file, "r", encoding="utf-8") as f:
-                uploaded_data = json.load(f)
-            # Store names without the .txt extension so they match 'quizzes'
-            user_uploaded = [os.path.splitext(u)[0] if u.endswith('.txt') else u
-                             for u in uploaded_data.get(ip, [])]
-        # Special case: 127.0.0.1 has full access to all quizzes
-        if ip == "127.0.0.1":
-            user_uploaded = quizzes
+        user_uploaded = get_owned_quizzes(
+            ACCOUNT_STORE, flask_session["username"])
         
         # Load plays
         plays = load_plays()
@@ -370,7 +520,8 @@ def home():
         
         banners = {q: banner_image_path(q) for q in quizzes_sorted}
         return render_template('home.html', quizzes=quizzes_sorted, user_uploaded=user_uploaded,
-                               plays=plays, banners=banners), 200
+                               plays=plays, banners=banners,
+                               session_username=flask_session["username"]), 200
     except Exception as e:
         logger.error(f"Error in home route: {str(e)}")
         return f"Error in home route: {str(e)}", 500
@@ -437,60 +588,37 @@ def get_icon():
 
 @app.route('/deletequiz', methods=['GET', 'POST'])
 def deletequiz():
-    ip = get_client_ip()
     if request.method == "GET":
-        logger.info(f"{ip} accessed delete quiz page")
-        # Expect the quiz name as a query parameter: ?quiz=quizname
-        quiz = request.args.get("quiz")
-        if not quiz:
-            return redirect(url_for("home"))
-        # Check if the quiz exists in the uploaded quizzes for this IP.
+        quiz = (request.args.get("quiz") or "").strip()
+        if not _owns_quiz(quiz):
+            abort(404)
+        logger.info(f"Account {flask_session['username']} opened delete confirmation for {quiz}")
         return render_template("deletequiz_confirm.html", quiz=quiz)
 
-    # POST: actually delete the quiz.
-    quiz_to_delete = request.form.get("quiz")
-    if not quiz_to_delete:
-        return redirect(url_for("home"))
+    quiz_to_delete = (request.form.get("quiz") or "").strip()
+    if not _owns_quiz(quiz_to_delete):
+        abort(404)
 
-    uploaded_file = os.path.join(os.path.dirname(__file__), "data", "uploaded.json")
-    if os.path.exists(uploaded_file):
-        with open(uploaded_file, "r", encoding="utf-8") as f:
-            uploaded_data = json.load(f)
-    else:
-        uploaded_data = {}
-    user_uploaded = uploaded_data.get(ip, [])
+    base_name = _canonical_quiz_name(quiz_to_delete)
+    quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
+    quiz_file = os.path.join(quiz_dir, base_name + ".txt")
+    if os.path.exists(quiz_file):
+        os.remove(quiz_file)
+    remove_owned_quiz(ACCOUNT_STORE, flask_session["username"], base_name)
+    logger.info(f"Account {flask_session['username']} deleted quiz: {base_name}")
 
-    # The name can arrive with or without the .txt extension; match both ways
-    base_name = quiz_to_delete[:-4] if quiz_to_delete.endswith('.txt') else quiz_to_delete
-    matched = (quiz_to_delete in user_uploaded) or ((base_name + '.txt') in user_uploaded)
-    # Localhost has full access to every quiz (same as the home page)
-    if ip == "127.0.0.1":
-        matched = True
+    try:
+        images_dir = os.path.join(UPLOAD_FOLDER, secure_filename(base_name))
+        if os.path.isdir(images_dir):
+            shutil.rmtree(images_dir)
+        meta_file = os.path.join(
+            os.path.dirname(__file__), "non_static", "question",
+            f"{base_name}_images.json")
+        if os.path.exists(meta_file):
+            os.remove(meta_file)
+    except OSError as error:
+        logger.warning(f"Could not fully clean up quiz files for {base_name}: {error}")
 
-    if matched:
-        logger.info(f"User {ip} deleting quiz: {quiz_to_delete}")
-        quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
-        quiz_file = os.path.join(quiz_dir, base_name + ".txt")
-        if os.path.exists(quiz_file):
-            os.remove(quiz_file)
-        # Remove any spelling of the name from uploaded.json
-        user_uploaded = [q for q in user_uploaded
-                         if q != quiz_to_delete and q != base_name and q != base_name + '.txt']
-        uploaded_data[ip] = user_uploaded
-        with open(uploaded_file, "w", encoding="utf-8") as f:
-            json.dump(uploaded_data, f)
-        # Best-effort cleanup of the quiz's images
-        try:
-            images_dir = os.path.join(UPLOAD_FOLDER, secure_filename(base_name))
-            if os.path.isdir(images_dir):
-                shutil.rmtree(images_dir, ignore_errors=True)
-            meta_file = os.path.join(os.path.dirname(__file__), "non_static", "question", f"{base_name}_images.json")
-            if os.path.exists(meta_file):
-                os.remove(meta_file)
-        except Exception as e:
-            logger.warning(f"Could not fully clean up quiz files for {ip}: {e}")
-
-    # Redirect to home page after deletion.
     return redirect(url_for("home"))
 
 @app.route('/addquiz', methods=['GET', 'POST'])
@@ -501,6 +629,19 @@ def addquiz():
     if request.method == 'POST':
         uploaded_file = request.files.get("quiz_file")
         if uploaded_file:
+            safe_filename = secure_filename(uploaded_file.filename or "")
+            if not safe_filename.lower().endswith(".txt"):
+                return render_template(
+                    "addquiz.html", message="Please upload a .txt quiz file."), 400
+            quiz_name = os.path.splitext(safe_filename)[0]
+            if not quiz_name:
+                return render_template(
+                    "addquiz.html", message="The uploaded filename is not valid."), 400
+            if os.path.exists(os.path.join(
+                    os.path.dirname(__file__), "non_static", "quiz",
+                    safe_filename)) and not _owns_quiz(quiz_name):
+                return render_template(
+                    "addquiz.html", message="A quiz with that name already exists."), 409
             content = uploaded_file.read().decode("utf-8")
             # Normalize line endings so Windows text-mode writing doesn't
             # double CRLF uploads into '\r\r\n' on disk.
@@ -509,20 +650,13 @@ def addquiz():
             quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
             if not os.path.exists(quiz_dir):
                 os.makedirs(quiz_dir)
-            file_path = os.path.join(quiz_dir, uploaded_file.filename)
+            file_path = os.path.join(quiz_dir, safe_filename)
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            
-            # Update uploaded.json
-            uploaded_data = read_uploaded_json()
-            if client_ip not in uploaded_data:
-                uploaded_data[client_ip] = []
-            if uploaded_file.filename not in uploaded_data[client_ip]:
-                uploaded_data[client_ip].append(uploaded_file.filename)
-            write_uploaded_json(uploaded_data)
-            
+
+            add_owned_quiz(
+                ACCOUNT_STORE, flask_session["username"], quiz_name)
             # Initialize play count for uploaded quiz
-            quiz_name = os.path.splitext(uploaded_file.filename)[0]  # Remove .txt extension
             plays = load_plays()
             if quiz_name not in plays:
                 plays[quiz_name] = 0
@@ -873,26 +1007,23 @@ def _steal_kahoot(quiz_input, search_query):
         raise ValueError("That Kahoot quiz has no multiple-choice or type-answer questions, so there is nothing to import.")
     return title, content, kept, question_images, cover_url
 
-def _save_stolen_quiz(client_ip, title, content, question_images, source='Kahoot', cover_url=''):
+def _save_stolen_quiz(owner, title, content, question_images, source='Kahoot', cover_url=''):
     """Saves a stolen quiz like an upload and steals question images plus the
     cover banner (best-effort). Returns the quiz name."""
-    filename = secure_filename(title)[:80] or f'{source.lower()}-quiz'
-    filename = filename + '.txt'
+    stem = secure_filename(title)[:80] or f'{source.lower()}-quiz'
     quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
     if not os.path.exists(quiz_dir):
         os.makedirs(quiz_dir)
-    with open(os.path.join(quiz_dir, filename), "w", encoding="utf-8") as f:
+    filename = stem + ".txt"
+    suffix = 2
+    while os.path.exists(os.path.join(quiz_dir, filename)):
+        filename = f"{stem}-{suffix}.txt"
+        suffix += 1
+    with open(os.path.join(quiz_dir, filename), "x", encoding="utf-8") as f:
         f.write(content)
 
-    # Register in uploaded.json so the user can edit/delete it like their own
-    uploaded_data = read_uploaded_json()
-    if client_ip not in uploaded_data:
-        uploaded_data[client_ip] = []
-    if filename not in uploaded_data[client_ip]:
-        uploaded_data[client_ip].append(filename)
-    write_uploaded_json(uploaded_data)
-
     quiz_name = os.path.splitext(filename)[0]
+    add_owned_quiz(ACCOUNT_STORE, owner, quiz_name)
     plays = load_plays()
     if quiz_name not in plays:
         plays[quiz_name] = 0
@@ -904,7 +1035,7 @@ def _save_stolen_quiz(client_ip, title, content, question_images, source='Kahoot
             image_data, file_ext = download_image_from_url(img_url)
             basename = urllib.parse.unquote(os.path.basename(urllib.parse.urlparse(img_url).path)) or f'kahoot-q{q_index + 1}{file_ext}'
             stem, _ = os.path.splitext(basename)
-            _store_quiz_image(quiz_name, image_data, f'{stem}{file_ext}', q_index, client_ip)
+            _store_quiz_image(quiz_name, image_data, f'{stem}{file_ext}', q_index, owner)
             images_stolen += 1
         except Exception as e:
             logger.warning(f"Could not steal question image for '{title}' Q{q_index + 1}: {e}")
@@ -983,7 +1114,7 @@ def stealquiz():
     except ValueError as e:
         return render_template("stealquiz.html", error=str(e))
 
-    quiz_name = _save_stolen_quiz(client_ip, title, content, question_images, cover_url=cover_url)
+    quiz_name = _save_stolen_quiz(flask_session["username"], title, content, question_images, cover_url=cover_url)
     _steal_limit_record(client_ip)
     return redirect(url_for('edit_quiz', quiz_name=quiz_name))
 
@@ -1006,7 +1137,7 @@ def stealblooket():
     except ValueError as e:
         return render_template("stealblooket.html", error=str(e))
 
-    quiz_name = _save_stolen_quiz(client_ip, title, content, question_images, source='Blooket')
+    quiz_name = _save_stolen_quiz(flask_session["username"], title, content, question_images, source='Blooket')
     _steal_limit_record(client_ip)
     return redirect(url_for('edit_quiz', quiz_name=quiz_name))
 
@@ -1033,10 +1164,9 @@ def api_searchkahoot():
 
 @app.route('/api/myquizzes', methods=['GET'])
 def api_myquizzes():
-    """Quizzes this IP owns (uploads/steals) - for the 3DS delete page."""
-    ip = get_client_ip()
-    quizzes = read_uploaded_json().get(ip, [])
-    names = sorted(os.path.splitext(q)[0] for q in quizzes)
+    """Quizzes owned by the authenticated account."""
+    names = sorted(get_owned_quizzes(
+        ACCOUNT_STORE, flask_session["username"]))
     return jsonify({'quizzes': names})
 
 @app.route('/api/stealquiz', methods=['POST'])
@@ -1054,7 +1184,7 @@ def api_stealquiz():
         title, content, kept, question_images, cover_url = _steal_kahoot(value, '')
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
-    quiz_name = _save_stolen_quiz(client_ip, title, content, question_images, cover_url=cover_url)
+    quiz_name = _save_stolen_quiz(flask_session["username"], title, content, question_images, cover_url=cover_url)
     _steal_limit_record(client_ip)
     return jsonify({'quiz_name': quiz_name})
 
@@ -1073,7 +1203,7 @@ def api_stealblooket():
         title, content, kept, question_images = _steal_blooket(value)
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
-    quiz_name = _save_stolen_quiz(client_ip, title, content, question_images, source='Blooket')
+    quiz_name = _save_stolen_quiz(flask_session["username"], title, content, question_images, source='Blooket')
     _steal_limit_record(client_ip)
     return jsonify({'quiz_name': quiz_name})
 
@@ -1083,8 +1213,11 @@ def api_renamequiz():
     client_ip = get_client_ip()
     quiz_name = (request.form.get('quiz_name') or '').strip()
     new_name = (request.form.get('new_name') or '').strip()
-    if not quiz_name or not new_name or new_name == quiz_name:
-        return jsonify({'error': 'Nothing to rename'}), 400
+    if not _owns_quiz(quiz_name):
+        return jsonify({'error': 'Quiz not found or not owned by this account'}), 404
+    quiz_name = _canonical_quiz_name(quiz_name)
+    if not _safe_quiz_name(new_name) or new_name == quiz_name:
+        return jsonify({'error': 'Invalid new quiz name'}), 400
 
     quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
     q_dir = os.path.join(os.path.dirname(__file__), "non_static", "question")
@@ -1113,12 +1246,8 @@ def api_renamequiz():
         logger.warning(f"Rename failed for {client_ip}: {e}")
         return jsonify({'error': 'Rename failed on the server'}), 500
 
-    uploaded_data = read_uploaded_json()
-    if client_ip in uploaded_data and quiz_name in uploaded_data[client_ip]:
-        uploaded_data[client_ip].remove(quiz_name)
-        if new_name not in uploaded_data[client_ip]:
-            uploaded_data[client_ip].append(new_name)
-        write_uploaded_json(uploaded_data)
+    rename_owned_quiz(
+        ACCOUNT_STORE, flask_session["username"], quiz_name, new_name)
 
     logger.info(f"{client_ip} renamed quiz '{quiz_name}' to '{new_name}'")
     return jsonify({'quiz_name': new_name})
@@ -1126,28 +1255,19 @@ def api_renamequiz():
 @app.route('/api/deletequiz', methods=['POST'])
 def api_deletequiz():
     """JSON delete for the 3DS (same cleanup as the web delete page)."""
-    ip = get_client_ip()
     quiz_to_delete = (request.form.get('quiz_name') or '').strip()
     if not quiz_to_delete:
         return jsonify({'error': 'No quiz name given'}), 400
+    if not _owns_quiz(quiz_to_delete):
+        return jsonify({'error': 'Quiz not found or not owned by this account'}), 404
 
-    base_name = quiz_to_delete[:-4] if quiz_to_delete.endswith('.txt') else quiz_to_delete
-    uploaded_data = read_uploaded_json()
-    user_uploaded = uploaded_data.get(ip, [])
-    matched = (quiz_to_delete in user_uploaded) or ((base_name + '.txt') in user_uploaded)
-    if ip == "127.0.0.1":
-        matched = True
-    if not matched:
-        return jsonify({'error': 'Quiz not found'}), 404
+    base_name = _canonical_quiz_name(quiz_to_delete)
 
     quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
     quiz_file = os.path.join(quiz_dir, base_name + ".txt")
     if os.path.exists(quiz_file):
         os.remove(quiz_file)
-    user_uploaded = [q for q in user_uploaded
-                     if q != quiz_to_delete and q != base_name and q != base_name + '.txt']
-    uploaded_data[ip] = user_uploaded
-    write_uploaded_json(uploaded_data)
+    remove_owned_quiz(ACCOUNT_STORE, flask_session["username"], base_name)
     try:
         images_dir = os.path.join(UPLOAD_FOLDER, secure_filename(base_name))
         if os.path.isdir(images_dir):
@@ -1156,18 +1276,24 @@ def api_deletequiz():
         if os.path.exists(meta_file):
             os.remove(meta_file)
     except Exception as e:
-        logger.warning(f"Could not fully clean up quiz files for {ip}: {e}")
+        logger.warning(
+            f"Could not fully clean up quiz files for "
+            f"{flask_session['username']}: {e}")
 
-    logger.info(f"User {ip} deleted quiz: {base_name} (3DS)")
+    logger.info(f"Account {flask_session['username']} deleted quiz: {base_name} (3DS)")
     return jsonify({'status': 'deleted'})
 
-def _store_quiz_image(quiz_name, image_file, display_name, question_index, client_ip):
+def _store_quiz_image(quiz_name, image_file, display_name, question_index, owner):
     """Validate, save, and register an image for a quiz.
 
     Works with any seekable file-like object (Werkzeug uploads or BytesIO).
     Returns the stored filename. Raises ValueError with a user-facing
     message when validation fails.
     """
+    if not _owns_quiz(quiz_name):
+        raise ValueError("Quiz not found or not owned by this account")
+    quiz_name = _canonical_quiz_name(quiz_name)
+
     # Get file extension
     filename = secure_filename(display_name or 'image')
     file_ext = os.path.splitext(filename)[1].lower()
@@ -1236,7 +1362,7 @@ def _store_quiz_image(quiz_name, image_file, display_name, question_index, clien
             with open(images_meta_file, 'w', encoding='utf-8') as mf:
                 json.dump(images_meta, mf)
         except Exception as e:
-            logger.warning(f"Failed to update images metadata for {client_ip}: {e}")
+            logger.warning(f"Failed to update images metadata for {owner}: {e}")
 
     # Also maintain a human-readable image-names.json inside the quiz upload folder
     try:
@@ -1257,7 +1383,7 @@ def _store_quiz_image(quiz_name, image_file, display_name, question_index, clien
         with open(uploaded_names_file, 'w', encoding='utf-8') as uf:
             json.dump(uploaded_names, uf)
     except Exception as e:
-        logger.warning(f"Failed to update image metadata for {client_ip}: {e}")
+        logger.warning(f"Failed to update image metadata for {owner}: {e}")
 
     return new_filename
 
@@ -1313,6 +1439,8 @@ def download_image_from_url(image_url):
 def upload_quiz_image(quiz_name):
     """Upload image for a quiz with validation"""
     client_ip = get_client_ip()
+    if not _owns_quiz(quiz_name):
+        return jsonify({'error': 'Quiz not found or not owned by this account'}), 404
 
     try:
         # Check if file is in request
@@ -1327,7 +1455,7 @@ def upload_quiz_image(quiz_name):
         question_index = request.form.get('question_index')
         try:
             new_filename = _store_quiz_image(quiz_name, image_file, image_file.filename,
-                                             question_index, client_ip)
+                                             question_index, flask_session["username"])
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
 
@@ -1350,6 +1478,8 @@ def upload_quiz_image(quiz_name):
 def upload_quiz_image_url(quiz_name):
     """Download an image from a URL and store it for a quiz"""
     client_ip = get_client_ip()
+    if not _owns_quiz(quiz_name):
+        return jsonify({'error': 'Quiz not found or not owned by this account'}), 404
 
     try:
         data = request.get_json(silent=True) or {}
@@ -1369,7 +1499,7 @@ def upload_quiz_image_url(quiz_name):
         question_index = data.get('question_index')
         try:
             new_filename = _store_quiz_image(quiz_name, image_data, display_name,
-                                             question_index, client_ip)
+                                             question_index, flask_session["username"])
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
 
@@ -1465,7 +1595,7 @@ def serve_uploaded_image(filepath):
 @app.route('/quiz/<quiz_name>', methods=['GET'])
 def get_quiz_json(quiz_name):
     # quiz_name is defined from the URL.
-    session['quiz_name'] = quiz_name
+    flask_session['quiz_name'] = quiz_name
     client_ip = get_client_ip()
     logger.info(f"{client_ip} is playing quiz '{quiz_name}'")
 
@@ -1491,11 +1621,11 @@ def get_quiz_json(quiz_name):
     current_index = question_data.get(client_ip, 0)
     
     # Increment play count only on first start of solo play
-    if current_index == 0 and not session.get('solo_started_' + quiz_name):
+    if current_index == 0 and not flask_session.get('solo_started_' + quiz_name):
         plays = load_plays()
         plays[quiz_name] = plays.get(quiz_name, 0) + 1
         save_plays(plays)
-        session['solo_started_' + quiz_name] = True
+        flask_session['solo_started_' + quiz_name] = True
     
     # If the current question index is out-of-range, render finish.html
     if current_index >= len(questions):
@@ -1541,7 +1671,7 @@ def get_quiz_json(quiz_name):
         question['images'] = imgs_list
     display_index = current_index + 1
     quiz_total = len(questions)
-    session['current_question_name'] = question.get('question', 'Unknown Question')
+    flask_session['current_question_name'] = question.get('question', 'Unknown Question')
     
     return render_template("quiz.html",
                            quiz_name=quiz_name,
@@ -1726,22 +1856,21 @@ def api_kahootcover():
 @app.route('/editquiz', methods=['GET', 'POST'])
 def editquiz_select():
     client_ip = get_client_ip()
-    quiz_dir = os.path.join(os.path.dirname(__file__), "non_static", "quiz")
     if request.method == 'POST':
         quiz = request.form.get('quiz', '').strip()
-        if quiz:
+        if _owns_quiz(quiz):
             return redirect(url_for('edit_quiz', quiz_name=quiz))
-        return render_template("editquiz_select.html", user_uploaded=sorted(
-            os.path.splitext(f)[0] for f in os.listdir(quiz_dir)
-            if f.endswith(".txt")), message="Please pick a quiz first.")
-    # GET: list every quiz so the user can pick one to edit.
-    quizzes = sorted(os.path.splitext(f)[0] for f in os.listdir(quiz_dir)
-                     if f.endswith(".txt"))
+        abort(404)
+    quizzes = sorted(get_owned_quizzes(
+        ACCOUNT_STORE, flask_session["username"]))
     logger.info(f"{client_ip} opened the quiz editor")
     return render_template("editquiz_select.html", user_uploaded=quizzes)
 
 @app.route('/editquiz/<quiz_name>', methods=['GET', 'POST'])
 def edit_quiz(quiz_name):
+    if not _owns_quiz(quiz_name):
+        abort(404)
+    quiz_name = _canonical_quiz_name(quiz_name)
     client_ip = get_client_ip()
     if request.method == 'GET':
         logger.info(f"{client_ip} is editing quiz '{quiz_name}'")
@@ -1771,8 +1900,18 @@ def edit_quiz(quiz_name):
         
         # Handle rename
         if new_quiz_name and new_quiz_name != quiz_name:
+            if not _safe_quiz_name(new_quiz_name):
+                return render_template(
+                    "editquiz.html", quiz_name=quiz_name,
+                    quiz_content=new_content,
+                    message="That quiz name is not valid."), 400
             new_quiz_file = os.path.join(os.path.dirname(__file__), "non_static", "quiz", f"{new_quiz_name}.txt")
             new_question_file = os.path.join(os.path.dirname(__file__), "non_static", "question", f"{new_quiz_name}.json")
+            if os.path.exists(new_quiz_file):
+                return render_template(
+                    "editquiz.html", quiz_name=quiz_name,
+                    quiz_content=new_content,
+                    message="A quiz with that name already exists."), 409
             
             try:
                 # Rename quiz file
@@ -1795,13 +1934,9 @@ def edit_quiz(quiz_name):
                     except Exception as e:
                         logger.warning(f"Failed to rename images dir for {client_ip}: {e}")
                 
-                # Update uploaded.json if needed
-                uploaded_data = read_uploaded_json()
-                if client_ip in uploaded_data and quiz_name in uploaded_data[client_ip]:
-                    uploaded_data[client_ip].remove(quiz_name)
-                    if new_quiz_name not in uploaded_data[client_ip]:
-                        uploaded_data[client_ip].append(new_quiz_name)
-                    write_uploaded_json(uploaded_data)
+                rename_owned_quiz(
+                    ACCOUNT_STORE, flask_session["username"],
+                    quiz_name, new_quiz_name)
                 
                 quiz_name = new_quiz_name
                 quiz_file = new_quiz_file
@@ -1849,7 +1984,7 @@ def quiz_validate(quiz_name):
     q = questions[current_index]
     
     # Store current question name in session for save_time
-    session['current_question_name'] = q.get('question', f'Question {current_index + 1}')
+    flask_session['current_question_name'] = q.get('question', f'Question {current_index + 1}')
     
     # Convert answer to int for MC questions
     if q['type'] == 'mc':
@@ -1880,8 +2015,16 @@ def makequiz():
         logger.info(f"{client_ip} accessed make quiz page")
     # ... rest of the function
     if request.method == 'POST':
-        filename = request.form.get("filename")
-        quiz_content = request.form.get("quiz_content")
+        filename = secure_filename((request.form.get("filename") or "").strip())
+        quiz_content = request.form.get("quiz_content") or ""
+        if not filename:
+            return render_template(
+                "makequiz.html", error="Please enter a valid quiz name."), 400
+        quiz_file = os.path.join(
+            os.path.dirname(__file__), "non_static", "quiz", f"{filename}.txt")
+        if os.path.exists(quiz_file) and not _owns_quiz(filename):
+            return render_template(
+                "makequiz.html", error="A quiz with that name already exists."), 409
         # Check if it's JSON from modern editor
         try:
             questions = json.loads(quiz_content)
@@ -1927,14 +2070,7 @@ def makequiz():
         quiz_file = os.path.join(quiz_dir, f"{filename}.txt")
         with open(quiz_file, "w", encoding="utf-8") as f:
             f.write(quiz_content)
-        
-        # Update uploaded.json
-        uploaded_data = read_uploaded_json()
-        if client_ip not in uploaded_data:
-            uploaded_data[client_ip] = []
-        if filename not in uploaded_data[client_ip]:
-            uploaded_data[client_ip].append(filename)
-        write_uploaded_json(uploaded_data)
+        add_owned_quiz(ACCOUNT_STORE, flask_session["username"], filename)
         
         # Initialize play count for new quiz
         plays = load_plays()
@@ -2001,7 +2137,7 @@ def submit_answer(quiz_name):
         return render_template("error.html", message="Error: Use POST"), 405
     client_ip = get_client_ip()
     time_taken = request.form.get('time_elapsed', '0')
-    question_name = session.get('current_question_name', "Unknown Question")
+    question_name = flask_session.get('current_question_name', "Unknown Question")
     
     # (Your code to update the time.txt file goes here)
     # ...
@@ -2150,7 +2286,7 @@ def save_time(quiz_name):
         time_taken = request.json.get('time_elapsed', '0')
     else:
         time_taken = request.form.get('time_elapsed', '0')
-    question_name = session.get('current_question_name', "Unknown Question")
+    question_name = flask_session.get('current_question_name', "Unknown Question")
     logger.info(f"Time saved for {client_ip} on quiz '{quiz_name}': {question_name} - {time_taken} sec")
 
     # Ensure time.json exists and migrate if needed
@@ -2460,6 +2596,9 @@ def handle_join_game(data):
 
 @socketio.on('host_join')
 def handle_host_join(data):
+    if not _socket_has_account():
+        emit('error', {'message': 'Login required to host a game.'})
+        return
     code = data['code']
     if code in sessions:
         sessions[code]['host_sid'] = request.sid
@@ -2467,6 +2606,9 @@ def handle_host_join(data):
 
 @socketio.on('control_join')
 def handle_control_join(data):
+    if not _socket_has_account():
+        emit('error', {'message': 'Login required to control a game.'})
+        return
     code = data['code']
     if code in sessions:
         join_room(code)
@@ -2736,7 +2878,7 @@ if __name__ == '__main__':
         from socketio import WSGIApp as socketio_wsgi_app
         from gevent import pywsgi
         from geventwebsocket.handler import WebSocketHandler
-        sio_app = socketio_wsgi_app(socketio, app)
+        sio_app = socketio_wsgi_app(socketio.server, app)
         tls_server = pywsgi.WSGIServer(('0.0.0.0', 443), sio_app,
                                        keyfile=keyfile, certfile=certfile,
                                        handler_class=WebSocketHandler, log=None)
